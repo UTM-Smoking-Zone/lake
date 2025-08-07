@@ -1,0 +1,191 @@
+version: '3.8'
+
+networks:
+  lakehouse:
+    driver: bridge
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    networks: [lakehouse]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    networks: [lakehouse]
+    ports:
+      - "0.0.0.0:9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks: [lakehouse]
+    ports:
+      - "0.0.0.0:8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: lakehouse
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      - kafka
+
+  kafka-producer:
+    build: ./kafka
+    container_name: kafka-producer
+    networks: [lakehouse]
+    depends_on:
+      - kafka
+    restart: unless-stopped
+    command: python3 producer.py
+
+  kafka-consumer:
+    build: ./kafka
+    container_name: kafka-consumer
+    networks: [lakehouse]
+    depends_on:
+      - kafka
+      - spark-master
+      - iceberg-init
+    restart: unless-stopped
+    command: python3 consumer.py
+      
+  # MinIO - S3 Compatible Storage
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    networks: [lakehouse]
+    ports:
+      - "0.0.0.0:9000:9000"
+      - "0.0.0.0:9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./data/minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL - Unified Database
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    networks: [lakehouse]
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Spark Master
+  spark-master:
+    image: bitnami/spark:3.5.0
+    container_name: spark-master
+    networks: [lakehouse]
+    ports:
+      - "0.0.0.0:8080:8080"
+      - "0.0.0.0:7077:7077"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - PYSPARK_PYTHON=python3
+      - PYSPARK_DRIVER_PYTHON=python3
+      # S3/MinIO Configuration
+      - SPARK_CONF_spark_hadoop_fs_s3a_endpoint=http://minio:9000
+      - SPARK_CONF_spark_hadoop_fs_s3a_access_key=${MINIO_ROOT_USER}
+      - SPARK_CONF_spark_hadoop_fs_s3a_secret_key=${MINIO_ROOT_PASSWORD}
+      - SPARK_CONF_spark_hadoop_fs_s3a_path_style_access=true
+      - SPARK_CONF_spark_hadoop_fs_s3a_impl=org.apache.hadoop.fs.s3a.S3AFileSystem
+      # Iceberg Configuration
+      - SPARK_CONF_spark_sql_extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+    volumes:
+      - ./config/spark:/opt/bitnami/spark/conf
+      - ./notebooks:/opt/notebooks
+      - ./scripts:/opt/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # Spark Worker
+  spark-worker:
+    image: bitnami/spark:3.5.0
+    container_name: spark-worker
+    networks: [lakehouse]
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      # S3/MinIO Configuration
+      - SPARK_CONF_spark_hadoop_fs_s3a_endpoint=http://minio:9000
+      - SPARK_CONF_spark_hadoop_fs_s3a_access_key=${MINIO_ROOT_USER}
+      - SPARK_CONF_spark_hadoop_fs_s3a_secret_key=${MINIO_ROOT_PASSWORD}
+      - SPARK_CONF_spark_hadoop_fs_s3a_path_style_access=true
+      - SPARK_CONF_spark_hadoop_fs_s3a_impl=org.apache.hadoop.fs.s3a.S3AFileSystem
+    depends_on:
+      - spark-master
+
+  # MinIO Client для создания buckets
+  minio-setup:
+    image: minio/mc:latest
+    container_name: minio-setup
+    networks: [lakehouse]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: |
+      bash -c "
+      mc alias set minio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+      mc mb minio/warehouse --ignore-existing &&
+      mc mb minio/bronze --ignore-existing &&
+      mc mb minio/silver --ignore-existing &&
+      mc mb minio/gold --ignore-existing &&
+      mc mb minio/checkpoints --ignore-existing &&
+      echo 'Buckets created successfully'
+      "
+
+  iceberg-init:
+    build: ./kafka
+    container_name: iceberg-init
+    networks: [lakehouse]
+    depends_on:
+      - spark-master
+      - minio
+    command: python3 /opt/scripts/init-iceberg.py
+    volumes:
+      - ./scripts:/opt/scripts
