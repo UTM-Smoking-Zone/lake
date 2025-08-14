@@ -1,0 +1,44 @@
+# Data directories - exclude from Git
+data/
+*.parquet
+*.snappy
+
+# Docker volumes
+data/minio/
+data/postgres/
+data/clickhouse/
+data/spark/
+
+# Logs
+*.log
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env.local
+.env.production
+
+# Temporary files
+*.tmp
+*.temp
