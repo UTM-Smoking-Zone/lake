@@ -20,6 +20,11 @@ class WebsocketProducer:
 
         config = {
             'bootstrap.servers': 'kafka:9092',
+            'api.version.request': False,           # ← КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
+            'broker.version.fallback': '0.10.0',    # ← Версия fallback
+            'api.version.request.timeout.ms': 30000, # ← Увеличенный таймаут
+            'socket.timeout.ms': 30000,             # ← Таймаут сокета
+            'message.timeout.ms': 60000,            # ← Таймаут сообщений
             'client.id': 'websocket-producer',
             'acks': 'all',
             'retries': 2147483647,
@@ -291,7 +296,6 @@ def main():
         topic_name
     )
 
-    # producer.connect()
 
     try:
         producer.connect()
