@@ -33,6 +33,12 @@ services:
   #     - lakehouse
 
   kafka:
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
     image: confluentinc/cp-kafka:7.4.0
     container_name: kafka
     networks: [lakehouse]
@@ -74,7 +80,8 @@ services:
     container_name: kafka-producer
     networks: [lakehouse]
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     restart: on-failure:3
     command: python3 producer.py
 

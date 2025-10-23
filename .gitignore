@@ -1,44 +1,264 @@
-# Data directories - exclude from Git
+# ===============================
+# Data Lake Project - .gitignore
+# ===============================
+
+# ============ DATA FILES ============
+# Never commit actual data
 data/
 *.parquet
-*.snappy
-
-# Docker volumes
-data/minio/
-data/postgres/
-data/clickhouse/
-data/spark/
-
-# Logs
+*.csv
+*.json
+*.avro
+*.orc
+*.txt
 *.log
-logs/
 
-# Python
+# Exclude data directories but keep structure
+data/clickhouse/*
+!data/clickhouse/.gitkeep
+data/minio/*
+!data/minio/.gitkeep
+data/postgres/*
+!data/postgres/.gitkeep
+data/spark/*
+!data/spark/.gitkeep
+
+# ============ PYTHON ============
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
+*.py[cod]
+*$py.class
+*.so
 
-# IDE
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+.env
+
+# Python distributions
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.whl
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ============ DOCKER ============
+# Docker volumes
+volumes/
+docker-compose.override.yml
+
+# Docker environment files
+.env.local
+.env.*.local
+
+# ============ DATABASES ============
+# PostgreSQL
+*.sql.gz
+pg_data/
+postgresql/
+
+# ClickHouse
+clickhouse_data/
+clickhouse_logs/
+
+# MinIO
+minio_data/
+.minio.sys/
+
+# ============ SPARK ============
+# Spark logs and metadata
+spark-warehouse/
+derby.log
+metastore_db/
+spark-logs/
+*.log
+
+# Spark checkpoints
+checkpoints/
+_spark_metadata/
+
+# ============ KAFKA ============
+# Kafka data and logs
+kafka_data/
+zookeeper_data/
+kafka-logs/
+zookeeper-logs/
+
+# ============ ICEBERG ============
+# Iceberg metadata (local)
+warehouse/
+iceberg-warehouse/
+
+# ============ TRINO/PRESTO ============
+# Trino catalogs and data
+trino_data/
+catalog/
+
+# ============ IDE & EDITORS ============
+# VSCode
 .vscode/
+*.code-workspace
+
+# PyCharm
 .idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
 *.swp
 *.swo
+*~
 
-# OS
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============ OS SPECIFIC ============
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# Windows
 Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
 
-# Environment files
-.env.local
-.env.production
+# ============ LOGS ============
+# Application logs
+logs/
+*.log
+log/
+*.out
 
+# ============ TEMPORARY FILES ============
 # Temporary files
+tmp/
+temp/
 *.tmp
-*.temp
+*.bak
+*.swp
+*.cache
+
+# ============ SECRETS & CONFIG ============
+# Sensitive configuration
+.env
+.env.local
+.env.*.local
+secrets/
+*.pem
+*.key
+*.crt
+credentials.json
+service-account.json
+
+# AWS credentials
+.aws/
+
+# ============ NOTEBOOKS ============
+# Notebook outputs (keep notebooks, ignore outputs)
+notebooks/**/*.html
+notebooks/**/*.pdf
+
+# ============ TERRAFORM (if used) ============
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# ============ ARTIFACTS ============
+# Build artifacts
+artifacts/
+output/
+results/
+
+# ============ TESTING ============
+# Test outputs
+test-results/
+test-output/
+.coverage.*
+
+# ============ MISCELLANEOUS ============
+# Backup files
+*.backup
+*.old
+
+# Compressed files (usually data)
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# ============ KEEP STRUCTURE ============
+# Keep empty directories with .gitkeep
+!**/.gitkeep
+!.gitkeep
+
+# ============ DOCUMENTATION ============
+# Generated documentation
+docs/_build/
+site/
+
+# ============ METRICS & MONITORING ============
+# Prometheus data
+prometheus_data/
+
+# Grafana data
+grafana_data/
+
+# ============ PROJECT SPECIFIC ============
+# Add any project-specific ignores below
+# Example: custom output directories
+dashboard/streamlit-dashboard/.streamlit/secrets.toml
+kafka/kafka-producer/data/
+kafka/kafka-consumer/data/
+processing/*/checkpoints/
+processing/*/output/

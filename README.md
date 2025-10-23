@@ -28,16 +28,20 @@ Real-time cryptocurrency data pipeline with Kafka, Iceberg, and Spark.
 - Consumer lag monitoring and error handling
 - MinIO warehouse with proper bucket structure
 - PostgreSQL Iceberg catalog with 15k+ snapshots
+- Add healthchecks in docker-compose.yml
 
 **Next**
 
+
+- Antimonolite `kafka-consumer` pattern
+- Rework Iceberg structure
+- Proper streaming architecture (Spark Structured Streaming)
+- Kafka topic design
+- Add schema evolution
 - Bronze layer restructuring with time partitioning and 24h TTL policy
 - Silver layer OHLCV schema design for multiple time intervals (1m/5m/1h/4h/1d)  
-- Basic Airflow DAG for 5-minute OHLCV aggregation and performance testing
 - Cover codebase with tests
 - Late arrivals handling mechanism with grace period logic
-- Multi-interval Airflow DAGs with proper task dependencies
 - REST API service with /metrics endpoints for Iceberg table queries
 - Data lifecycle management policies for different retention periods
-- Airflow DAGs for historical data backfill from exchange REST APIs
 - Grafana dashboard with Prometheus metrics scraping
