@@ -11,27 +11,6 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
 
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: redis
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
-  #   command:
-  #     - redis-server
-  #     - --appendonly yes
-  #     - --appendfsync everysec
-  #     - --maxmemory 4gb
-  #     - --maxmemory-policy allkeys-lru
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   networks:
-  #     - lakehouse
-
   kafka:
     healthcheck:
       test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
@@ -144,7 +123,7 @@ services:
 
   # Spark Master
   spark-master:
-    image: bitnami/spark:3.5.0
+    image: apache/spark:3.5.0
     container_name: spark-master
     networks: [lakehouse]
     ports:
@@ -178,7 +157,7 @@ services:
 
   # Spark Worker
   spark-worker:
-    image: bitnami/spark:3.5.0
+    image: apache/spark:3.5.0
     container_name: spark-worker
     networks: [lakehouse]
     environment:
@@ -219,15 +198,22 @@ services:
       "
 
   iceberg-init:
-    build: ./kafka
+    image: apache/spark:3.5.0
     container_name: iceberg-init
     networks: [lakehouse]
     depends_on:
       - spark-master
       - minio
-    command: python3 /opt/scripts/init-iceberg.py
+    command: >
+      bash -c "
+      pip install --quiet pyspark==3.5.0 pyiceberg==0.5.0 &&
+      python3 /opt/scripts/init-iceberg.py
+      "
     volumes:
       - ./scripts:/opt/scripts
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 
 volumes:
   postgres_data:
