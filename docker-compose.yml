@@ -64,6 +64,23 @@ services:
     restart: on-failure:3
     command: python3 producer.py
 
+  # kafka-consumer:
+  #   build: ./kafka/kafka-consumer
+  #   container_name: kafka-consumer
+  #   networks: [lakehouse]
+  #   depends_on:
+  #     - kafka
+  #     - minio
+  #     - iceberg-init
+  #   restart: on-failure:3
+  #   command: python3 consumer.py
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #       reservations:
+  #         memory: 1G
+
   kafka-consumer:
     build: ./kafka/kafka-consumer
     container_name: kafka-consumer
@@ -73,13 +90,25 @@ services:
       - minio
       - iceberg-init
     restart: on-failure:3
-    command: python3 consumer.py
+    command: python3 -u consumer.py
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - PYTHONUNBUFFERED=1 
     deploy:
       resources:
         limits:
           memory: 2G
         reservations:
           memory: 1G
+    logging:                         # ← ДОБАВИТЬ СЕКЦИЮ
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
       
   # MinIO - S3 Compatible Storage
   minio:

@@ -16,6 +16,6 @@ RUN pip install --no-cache-dir \
     sqlalchemy==2.0.32
 
 WORKDIR /app
-COPY consumer.py .
+COPY *.py .
 
 CMD ["python3", "consumer.py"]

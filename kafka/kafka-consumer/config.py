@@ -27,6 +27,6 @@ class IcebergConfig:
 
 @dataclass
 class BatchConfig:
-    batch_size: int = 50000
+    batch_size: int = 5000
     batch_timeout: int = 600
     max_retries: int = 3

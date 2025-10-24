@@ -2,7 +2,7 @@ import json
 import time
 import signal
 import threading
-
+from datetime import datetime, timezone
 from typing import Dict
 from websocket import WebSocketApp
 from confluent_kafka import Producer
@@ -17,14 +17,13 @@ class WebsocketProducer:
         self.subscription_params = subscription_params
         self.topic_name = topic_name
        
-
         config = {
             'bootstrap.servers': 'kafka:9092',
-            'api.version.request': False,           # ← КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
-            'broker.version.fallback': '0.10.0',    # ← Версия fallback
-            'api.version.request.timeout.ms': 30000, # ← Увеличенный таймаут
-            'socket.timeout.ms': 30000,             # ← Таймаут сокета
-            'message.timeout.ms': 60000,            # ← Таймаут сообщений
+            'api.version.request': False,
+            'broker.version.fallback': '0.10.0',
+            'api.version.request.timeout.ms': 30000,
+            'socket.timeout.ms': 30000,
+            'message.timeout.ms': 60000,
             'client.id': 'websocket-producer',
             'acks': 'all',
             'retries': 2147483647,
@@ -39,21 +38,16 @@ class WebsocketProducer:
         }
 
         self.producer = Producer(config)
-
         self.is_connected = False
         self.should_reconnect = True
         self.should_stop = False
         self.reconnect_interval = 1
         self.max_reconnect_interval = 60
         self.reconnect_attempts = 0
-
-        # Websocket instance
         self.wsapp = None
-
-        # Thread safety
         self.reconnect_lock = threading.Lock()
+        self.message_count = 0
 
-        # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
@@ -67,9 +61,8 @@ class WebsocketProducer:
                     on_error=self._on_error
                 )
                 self.wsapp.run_forever()
-
             except Exception as e:
-                pass
+                print(f"Connection error: {e}")
             finally:
                 self.is_connected = False
 
@@ -81,30 +74,32 @@ class WebsocketProducer:
         self.is_connected = True
         self.reconnect_attempts = 0
         self.reconnect_interval = 1
+        print(f"✅ Connected to {self.websocket_url}")
 
         try:
             wsapp.send(json.dumps(self.subscription_params))
+            print(f"📡 Subscribed to {self.subscription_params['args']}")
         except Exception as e:
+            print(f"❌ Subscription error: {e}")
             wsapp.close()
 
     def _on_message(self, wsapp, message) -> None:
         """Handle incoming messages."""
         try:
-            try:
-                parsed_message = json.loads(message)
-            except json.JSONDecodeError:
-                return
+            parsed_message = json.loads(message)
             
             if self._handle_data_message(parsed_message):
                 return
             elif self._handle_system_message(parsed_message):
                 return
             
+        except json.JSONDecodeError:
+            return
         except Exception as e:
-            pass
+            print(f"Message handling error: {e}")
         
     def _handle_data_message(self, parsed_message: Dict) -> bool:
-        """Hadnle data."""
+        """Handle data."""
         if 'data' not in parsed_message:
             return False
         
@@ -115,21 +110,62 @@ class WebsocketProducer:
             
             for data in data_list:
                 if self._validate_trade_data(data):
-                    partition_key = self._generate_partition_key(data)
-                    self._send_to_kafka(partition_key, data)
+                    # ✅ ТРАНСФОРМИРОВАТЬ данные для consumer
+                    transformed_data = self._transform_bybit_data(data)
+                    partition_key = self._generate_partition_key(transformed_data)
+                    self._send_to_kafka(partition_key, transformed_data)
 
             self.producer.poll(0)
-
             return True
         
         except Exception as e:
+            print(f"Data handling error: {e}")
             return True
+
+    def _transform_bybit_data(self, bybit_data: Dict) -> Dict:
+        """Transform Bybit format to consumer format."""
+        try:
+            # Bybit timestamp в миллисекундах
+            timestamp_ms = int(bybit_data['T'])
+            dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+            
+            # Формат для consumer
+            transformed = {
+                'symbol': 'BTCUSDT',
+                'timestamp': dt.isoformat(),
+                'price': float(bybit_data['p']),
+                'volume': float(bybit_data['v']),
+                'side': bybit_data['S'].lower(),  # 'Buy' -> 'buy'
+                'trade_id': str(bybit_data.get('i', f"{timestamp_ms}")),
+                'source': 'bybit',
+                'processing_time': datetime.now(timezone.utc).isoformat(),
+                'date_partition': dt.date().isoformat()
+            }
+            
+            return transformed
+            
+        except Exception as e:
+            print(f"Transform error: {e}")
+            # Fallback
+            return {
+                'symbol': 'BTCUSDT',
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'price': float(bybit_data.get('p', 0)),
+                'volume': float(bybit_data.get('v', 0)),
+                'side': bybit_data.get('S', 'unknown').lower(),
+                'trade_id': str(bybit_data.get('i', 'unknown')),
+                'source': 'bybit',
+                'processing_time': datetime.now(timezone.utc).isoformat(),
+                'date_partition': datetime.now(timezone.utc).date().isoformat()
+            }
 
     def _handle_system_message(self, parsed_message: Dict) -> bool:
         """Handle system message."""
         if 'success' in parsed_message:
+            print(f"✅ Subscription successful: {parsed_message}")
             return True
         elif 'error' in parsed_message:
+            print(f"❌ Error: {parsed_message}")
             return True
         elif 'topic' in parsed_message and parsed_message['topic'] == 'heartbeat':
             return True
@@ -160,14 +196,13 @@ class WebsocketProducer:
 
     def _generate_partition_key(self, data: Dict) -> str:
         """Generate partition key."""
-        trade_id = data.get('i')
-
+        trade_id = data.get('trade_id')
         if trade_id:
             return str(trade_id)
         
-        timestamp = data.get('T', int(time.time() * 1000))
-
-        return str(timestamp % 1000)
+        # Fallback to timestamp
+        timestamp = data.get('timestamp', datetime.now().isoformat())
+        return str(hash(timestamp) % 1000)
     
     def _send_to_kafka(self, key: str, data: Dict) -> None:
         """Send message to Kafka."""
@@ -178,10 +213,13 @@ class WebsocketProducer:
                 value=self._serializer(data),
                 on_delivery=self._delivery_report
             )
+            
+            self.message_count += 1
+            if self.message_count % 100 == 0:
+                print(f"📊 Sent {self.message_count} messages to Kafka")
 
         except BufferError:
             self.producer.poll(1)
-
             try:
                 self.producer.produce(
                     topic=self.topic_name,
@@ -189,32 +227,19 @@ class WebsocketProducer:
                     value=self._serializer(data),
                     on_delivery=self._delivery_report
                 )
-
             except BufferError as e:
-                pass
-        
-        except Exception:
-            pass
+                print(f"❌ Buffer full: {e}")
+        except Exception as e:
+            print(f"❌ Kafka send error: {e}")
 
-    # @staticmethod
-    # def _on_error(ws, error) -> None:
-    #     print(error)
-
-    # @staticmethod
-    # def _delivery_report(error, msg) -> None:
-    #     if error is not None:
-    #         print("Delivery failed for record {}: {}".format(msg.key(), error))
-
-    # @staticmethod
-    # def _serializer(x: str) -> bytes:
-    #     return json.dumps(x).encode()
-    
     def _on_error(self, wsapp, error) -> None:
         """Handle WebSocket errors"""
+        print(f"⚠️ WebSocket error: {error}")
         self.is_connected = False
 
     def _on_close(self, wsapp, close_status_code, close_msg) -> None:
         """Handle WebSocket close"""
+        print(f"🔌 Connection closed: {close_status_code} - {close_msg}")
         self.is_connected = False
 
     def _handle_reconnection(self):
@@ -224,10 +249,10 @@ class WebsocketProducer:
             
         with self.reconnect_lock:
             self.reconnect_attempts += 1
+            print(f"🔄 Reconnecting (attempt {self.reconnect_attempts})...")
             
             time.sleep(self.reconnect_interval)
             
-            # Exponential backoff with jitter
             jitter = (time.time() % 1) * 0.1
             self.reconnect_interval = min(
                 self.reconnect_interval * 1.5 + jitter,
@@ -236,6 +261,7 @@ class WebsocketProducer:
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals"""
+        print("\n🛑 Shutting down...")
         self.stop()
 
     def stop(self):
@@ -244,38 +270,46 @@ class WebsocketProducer:
         self.should_stop = True
         self.is_connected = False
         
-        # Close WebSocket connection
         if self.wsapp:
             try:
                 self.wsapp.close()
             except Exception:
                 pass
         
-        # Flush remaining messages to Kafka
         try:
+            print("📤 Flushing remaining messages...")
             remaining = self.producer.flush(timeout=30)
-        except Exception:
-            pass
+            if remaining > 0:
+                print(f"⚠️ {remaining} messages failed to send")
+            else:
+                print("✅ All messages sent successfully")
+        except Exception as e:
+            print(f"❌ Flush error: {e}")
 
     def get_connection_status(self) -> Dict:
         """Get current connection status"""
         return {
             'is_connected': self.is_connected,
             'reconnect_attempts': self.reconnect_attempts,
-            'should_reconnect': self.should_reconnect
+            'should_reconnect': self.should_reconnect,
+            'messages_sent': self.message_count
         }
 
     @staticmethod
     def _delivery_report(error, msg) -> None:
         """Kafka delivery report callback"""
-        pass
+        if error is not None:
+            print(f"❌ Delivery failed: {error}")
 
     @staticmethod
     def _serializer(data: Dict) -> bytes:
         """Serialize data to bytes"""
         return json.dumps(data).encode()
 
+
 def main():
+    print("🚀 Starting Bybit WebSocket Producer")
+    
     websocket_url = 'wss://stream.bybit.com/v5/public/linear'
 
     subscription_params = {
@@ -296,11 +330,10 @@ def main():
         topic_name
     )
 
-
     try:
         producer.connect()
     except KeyboardInterrupt:
-        pass
+        print("\n⚠️ Interrupted by user")
     finally:
         producer.stop()
 

@@ -17,11 +17,14 @@ import os
 import requests
 from functools import lru_cache
 import concurrent.futures
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import boto3
+from botocore.client import Config
 
 # Page configuration
 st.set_page_config(
-    page_title="⚡ Ultra Lakehouse Monitor",
-    page_icon="⚡",
+    page_title="🚀 Lakehouse Monitor",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -63,6 +66,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Database configuration
+DB_CONFIG = {
+    'host': os.getenv('POSTGRES_HOST', 'localhost'),
+    'port': int(os.getenv('POSTGRES_PORT', 5432)),
+    'database': os.getenv('POSTGRES_DB', 'lakehouse'),
+    'user': os.getenv('POSTGRES_USER', 'admin'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'admin123')
+}
+
+# MinIO configuration
+MINIO_CONFIG = {
+    'endpoint_url': os.getenv('MINIO_ENDPOINT', 'http://localhost:9000'),
+    'aws_access_key_id': os.getenv('MINIO_ROOT_USER', 'minioadmin'),
+    'aws_secret_access_key': os.getenv('MINIO_ROOT_PASSWORD', 'minioadmin123')
+}
+
 # Initialize session state for caching
 if 'metrics_cache' not in st.session_state:
     st.session_state.metrics_cache = {}
@@ -72,25 +91,264 @@ if 'metrics_cache' not in st.session_state:
         'cpu': [], 'memory': [], 'disk': [], 'network_in': [], 'network_out': [],
         'containers_running': [], 'kafka_lag': [], 'docker_memory': []
     }
-    st.session_state.btc_price = 0.0
-    st.session_state.btc_last_update = 0
 
-# Cache for expensive operations
-@st.cache_data(ttl=30)  # Cache for 30 seconds
-def get_real_btc_price():
-    """Get real BTC price from Binance API"""
+# ==================== DATABASE CONNECTIONS ====================
+
+@st.cache_resource
+def get_postgres_connection():
+    """Create cached PostgreSQL connection"""
     try:
-        response = requests.get('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            return float(data['price'])
+        conn = psycopg2.connect(**DB_CONFIG)
+        return conn
     except Exception as e:
-        st.error(f"Failed to fetch BTC price: {e}")
-    
-    # Fallback to mock data if API fails
-    return 45000.0 + (np.random.random() * 1000 - 500)  # Random around 45k
+        st.error(f"❌ Failed to connect to PostgreSQL: {e}")
+        return None
 
-@st.cache_data(ttl=10)  # Cache system metrics for 10 seconds
+@st.cache_resource
+def get_minio_client():
+    """Create cached MinIO S3 client"""
+    try:
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=MINIO_CONFIG['endpoint_url'],
+            aws_access_key_id=MINIO_CONFIG['aws_access_key_id'],
+            aws_secret_access_key=MINIO_CONFIG['aws_secret_access_key'],
+            config=Config(signature_version='s3v4'),
+            region_name='us-east-1'
+        )
+        return s3_client
+    except Exception as e:
+        st.error(f"❌ Failed to connect to MinIO: {e}")
+        return None
+
+# ==================== DATABASE QUERIES ====================
+
+@st.cache_data(ttl=10)
+def get_database_trading_metrics():
+    """Get real trading metrics from database"""
+    conn = get_postgres_connection()
+    if not conn:
+        return {
+            'total_records': 0,
+            'recent_records': 0,
+            'avg_price': 0,
+            'latest_price': 0,
+            'latest_timestamp': None,
+            'processing_rate': 0,
+            'error': 'No database connection'
+        }
+    
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Check if table exists
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'lakehouse' 
+                    AND table_name = 'bronze_trades'
+                )
+            """)
+            table_exists = cursor.fetchone()['exists']
+            
+            if not table_exists:
+                return {
+                    'total_records': 0,
+                    'recent_records': 0,
+                    'avg_price': 0,
+                    'latest_price': 0,
+                    'latest_timestamp': None,
+                    'processing_rate': 0,
+                    'warning': 'Table lakehouse.bronze_trades does not exist yet'
+                }
+            
+            # Total records
+            cursor.execute("SELECT COUNT(*) as total_records FROM lakehouse.bronze_trades")
+            total = cursor.fetchone()
+            
+            # Recent activity (last hour)
+            cursor.execute("""
+                SELECT COUNT(*) as recent_records
+                FROM lakehouse.bronze_trades
+                WHERE timestamp > NOW() - INTERVAL '1 hour'
+            """)
+            recent = cursor.fetchone()
+            
+            # Average price (last hour)
+            cursor.execute("""
+                SELECT AVG(price) as avg_price
+                FROM lakehouse.bronze_trades
+                WHERE timestamp > NOW() - INTERVAL '1 hour'
+            """)
+            avg = cursor.fetchone()
+            
+            # Latest price and timestamp
+            cursor.execute("""
+                SELECT price as latest_price, timestamp
+                FROM lakehouse.bronze_trades
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """)
+            latest = cursor.fetchone()
+            
+            return {
+                'total_records': total['total_records'] if total else 0,
+                'recent_records': recent['recent_records'] if recent else 0,
+                'avg_price': float(avg['avg_price']) if avg and avg['avg_price'] else 0,
+                'latest_price': float(latest['latest_price']) if latest else 0,
+                'latest_timestamp': latest['timestamp'] if latest else None,
+                'processing_rate': round(recent['recent_records'] / 3600, 2) if recent and recent['recent_records'] else 0
+            }
+    except Exception as e:
+        st.error(f"Error fetching trading metrics: {e}")
+        return {
+            'total_records': 0,
+            'recent_records': 0,
+            'avg_price': 0,
+            'latest_price': 0,
+            'latest_timestamp': None,
+            'processing_rate': 0,
+            'error': str(e)
+        }
+
+@st.cache_data(ttl=30)
+def get_latest_trades(limit=10):
+    """Get latest trades from database"""
+    conn = get_postgres_connection()
+    if not conn:
+        return []
+    
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Check if table exists
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'lakehouse' 
+                    AND table_name = 'bronze_trades'
+                )
+            """)
+            table_exists = cursor.fetchone()['exists']
+            
+            if not table_exists:
+                return []
+            
+            cursor.execute("""
+                SELECT 
+                    id,
+                    symbol,
+                    price,
+                    quantity,
+                    side,
+                    timestamp,
+                    exchange
+                FROM lakehouse.bronze_trades
+                ORDER BY timestamp DESC
+                LIMIT %s
+            """, (limit,))
+            
+            trades = cursor.fetchall()
+            return [dict(trade) for trade in trades]
+    except Exception as e:
+        st.error(f"Error fetching trades: {e}")
+        return []
+
+@st.cache_data(ttl=30)
+def get_database_stats():
+    """Get PostgreSQL database statistics"""
+    conn = get_postgres_connection()
+    if not conn:
+        return {'error': 'No database connection'}
+    
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Get database size
+            cursor.execute("""
+                SELECT pg_size_pretty(pg_database_size(current_database())) as size
+            """)
+            db_size = cursor.fetchone()
+            
+            # Get table sizes
+            cursor.execute("""
+                SELECT 
+                    schemaname,
+                    tablename,
+                    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size,
+                    pg_total_relation_size(schemaname||'.'||tablename) AS size_bytes
+                FROM pg_tables
+                WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+                ORDER BY size_bytes DESC
+                LIMIT 5
+            """)
+            tables = cursor.fetchall()
+            
+            return {
+                'database_size': db_size['size'] if db_size else 'Unknown',
+                'tables': [dict(t) for t in tables] if tables else []
+            }
+    except Exception as e:
+        return {'error': str(e)}
+
+@st.cache_data(ttl=30)
+def get_minio_stats():
+    """Get MinIO bucket statistics"""
+    s3_client = get_minio_client()
+    if not s3_client:
+        return {'error': 'No MinIO connection'}
+    
+    try:
+        buckets = s3_client.list_buckets()
+        
+        bucket_stats = []
+        total_size = 0
+        total_objects = 0
+        
+        for bucket in buckets['Buckets']:
+            bucket_name = bucket['Name']
+            
+            try:
+                # Get bucket objects
+                paginator = s3_client.get_paginator('list_objects_v2')
+                pages = paginator.paginate(Bucket=bucket_name)
+                
+                size = 0
+                count = 0
+                
+                for page in pages:
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            size += obj['Size']
+                            count += 1
+                
+                bucket_stats.append({
+                    'name': bucket_name,
+                    'objects': count,
+                    'size_bytes': size,
+                    'size_mb': round(size / 1024 / 1024, 2)
+                })
+                
+                total_size += size
+                total_objects += count
+            except Exception as e:
+                bucket_stats.append({
+                    'name': bucket_name,
+                    'objects': 0,
+                    'size_bytes': 0,
+                    'size_mb': 0,
+                    'error': str(e)
+                })
+        
+        return {
+            'buckets': bucket_stats,
+            'total_buckets': len(buckets['Buckets']),
+            'total_objects': total_objects,
+            'total_size_gb': round(total_size / 1024 / 1024 / 1024, 2)
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+# ==================== SYSTEM METRICS ====================
+
+@st.cache_data(ttl=10)
 def get_system_metrics():
     """Get system metrics with caching"""
     try:
@@ -136,39 +394,6 @@ def get_docker_metrics_light():
     except Exception as e:
         return {'error': str(e)}
 
-def collect_fast_metrics():
-    """Collect only fast metrics for real-time display"""
-    start_time = time.time()
-    metrics = {}
-    
-    # Get BTC price (cached)
-    current_time = time.time()
-    if current_time - st.session_state.btc_last_update > 30:  # Update every 30 seconds
-        st.session_state.btc_price = get_real_btc_price()
-        st.session_state.btc_last_update = current_time
-    
-    # System metrics (cached)
-    metrics['system'] = get_system_metrics()
-    
-    # Lightweight docker metrics
-    metrics['docker'] = get_docker_metrics_light()
-    
-    # Mock data pipeline metrics (fast)
-    metrics['data'] = {
-        'current_btc_price': st.session_state.btc_price,
-        'total_records': 1574832 + int((time.time() % 100)),  # Simulate growth
-        'processing_rate_per_sec': 4.2,
-        'data_freshness_seconds': 5,
-        'success_rate_percent': 99.97
-    }
-    
-    metrics['meta'] = {
-        'fetch_time_ms': round((time.time() - start_time) * 1000, 1),
-        'timestamp': datetime.now()
-    }
-    
-    return metrics
-
 def collect_slow_metrics():
     """Collect slower metrics that don't need real-time updates"""
     metrics = {}
@@ -183,7 +408,6 @@ def collect_slow_metrics():
             if container.status == 'running':
                 try:
                     stats = container.stats(stream=False)
-                    # Simplified stats calculation
                     memory_usage = stats['memory_stats'].get('usage', 0)
                     memory_mb = memory_usage / 1024**2
                     
@@ -202,55 +426,127 @@ def collect_slow_metrics():
     
     return metrics
 
+# ==================== HELPER FUNCTIONS ====================
+
+def _calculate_freshness(timestamp):
+    """Calculate data freshness in seconds"""
+    if not timestamp:
+        return 999
+    
+    if isinstance(timestamp, str):
+        timestamp = datetime.fromisoformat(timestamp)
+    
+    # Remove timezone info for comparison
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.replace(tzinfo=None)
+    
+    delta = datetime.now() - timestamp
+    return int(delta.total_seconds())
+
+def collect_fast_metrics():
+    """Collect only fast metrics for real-time display"""
+    start_time = time.time()
+    metrics = {}
+    
+    # System metrics (cached)
+    metrics['system'] = get_system_metrics()
+    
+    # Docker metrics
+    metrics['docker'] = get_docker_metrics_light()
+    
+    # ✅ REAL DATA from database
+    trading_metrics = get_database_trading_metrics()
+    
+    # Calculate data freshness
+    freshness = _calculate_freshness(trading_metrics.get('latest_timestamp'))
+    
+    metrics['data'] = {
+        'current_btc_price': trading_metrics.get('latest_price', 0),
+        'total_records': trading_metrics.get('total_records', 0),
+        'processing_rate_per_sec': trading_metrics.get('processing_rate', 0),
+        'data_freshness_seconds': freshness,
+        'success_rate_percent': 99.97,  # Can calculate from error logs
+        'has_data': trading_metrics.get('total_records', 0) > 0
+    }
+    
+    # Add warning if present
+    if 'warning' in trading_metrics:
+        metrics['data']['warning'] = trading_metrics['warning']
+    if 'error' in trading_metrics:
+        metrics['data']['db_error'] = trading_metrics['error']
+    
+    metrics['meta'] = {
+        'fetch_time_ms': round((time.time() - start_time) * 1000, 1),
+        'timestamp': datetime.now()
+    }
+    
+    return metrics
+
 def update_performance_history(metrics):
     """Update performance history for trends"""
     history = st.session_state.performance_history
     
     if 'system' in metrics and 'error' not in metrics['system']:
-        # Keep history manageable
-        for key in ['cpu', 'memory', 'disk']:
-            if len(history[key]) > 20:
-                history[key] = history[key][-20:]
+        max_history = 50
         
-        history['cpu'].append(metrics['system']['cpu_percent'])
-        history['memory'].append(metrics['system']['memory_percent'])
-        history['disk'].append(metrics['system']['disk_percent'])
-
-def create_mini_chart(data, title, color='blue', height=150):
-    """Create mini trend chart"""
-    if not data or len(data) < 2:
-        fig = go.Figure()
-        fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-        return fig
+        for key in ['cpu', 'memory', 'disk']:
+            metric_key = f'{key}_percent'
+            if metric_key in metrics['system']:
+                history[key].append(metrics['system'][metric_key])
+                if len(history[key]) > max_history:
+                    history[key] = history[key][-max_history:]
     
-    fig = go.Figure(go.Scatter(
+    if 'docker' in metrics and 'error' not in metrics['docker']:
+        running_count = metrics['docker'].get('running_count', 0)
+        history['containers_running'].append(running_count)
+        if len(history['containers_running']) > 50:
+            history['containers_running'] = history['containers_running'][-50:]
+
+def create_mini_chart(data, title, color):
+    """Create mini sparkline chart"""
+    fig = go.Figure()
+    
+    # Convert hex color to rgba for fill
+    # Extract RGB values from hex
+    r = int(color[1:3], 16)
+    g = int(color[3:5], 16)
+    b = int(color[5:7], 16)
+    fill_color = f'rgba({r},{g},{b},0.2)'
+    
+    fig.add_trace(go.Scatter(
         y=data,
         mode='lines',
         line=dict(color=color, width=2),
         fill='tozeroy',
-        fillcolor=f'rgba{tuple(int(color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4)) + (0.2,)}' if color.startswith('#') else f'rgba(100, 100, 200, 0.2)'
+        fillcolor=fill_color,  # Use rgba format instead of hex with opacity
+        name=title
     ))
+    
     fig.update_layout(
-        title=dict(text=title, font=dict(size=10)),
-        height=height,
-        margin=dict(t=30, b=10, l=10, r=10),
+        title=title,
+        height=200,
+        margin=dict(l=10, r=10, t=30, b=10),
         showlegend=False,
-        xaxis=dict(showticklabels=False, showgrid=False),
-        yaxis=dict(showticklabels=True, tickfont=dict(size=8), showgrid=False)
+        xaxis=dict(showgrid=False, showticklabels=False),
+        yaxis=dict(showgrid=True, gridcolor='#f0f0f0')
     )
+    
     return fig
 
 def format_uptime(seconds):
+    """Format uptime string"""
     days = int(seconds // 86400)
     hours = int((seconds % 86400) // 3600)
     minutes = int((seconds % 3600) // 60)
     return f"{days}d {hours}h {minutes}m"
 
+# ==================== MAIN APP ====================
+
 def main():
-    # Ultra-fast header
-    st.markdown('<div class="main-header">⚡ Ultra-Fast Lakehouse Monitor | Real-time Data Pipeline Analytics</div>', unsafe_allow_html=True)
+    # Header
+    st.markdown('<div class="main-header">🚀 Lakehouse Monitor | Real-time Data Pipeline Analytics</div>', unsafe_allow_html=True)
     
-    # Collect metrics with progress
+    # Collect metrics
     with st.spinner('🔄 Collecting metrics...'):
         fast_metrics = collect_fast_metrics()
         update_performance_history(fast_metrics)
@@ -259,7 +555,6 @@ def main():
     if 'slow_metrics' not in st.session_state:
         st.session_state.slow_metrics = {}
     
-    # Update slow metrics less frequently
     current_time = time.time()
     if 'last_slow_update' not in st.session_state or current_time - st.session_state.last_slow_update > 30:
         with st.spinner('📊 Updating detailed metrics...'):
@@ -269,13 +564,19 @@ def main():
     # Merge metrics
     all_metrics = {**fast_metrics, **st.session_state.slow_metrics}
     
-    # === ULTRA-FAST OVERVIEW BAR ===
-    col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
-    
     system_data = all_metrics.get('system', {})
     docker_data = all_metrics.get('docker', {})
     data_pipeline = all_metrics.get('data', {})
     meta_data = all_metrics.get('meta', {})
+    
+    # Display warnings if any
+    if 'warning' in data_pipeline:
+        st.warning(f"⚠️ {data_pipeline['warning']}")
+    if 'db_error' in data_pipeline:
+        st.error(f"❌ Database Error: {data_pipeline['db_error']}")
+    
+    # === OVERVIEW BAR ===
+    col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
     
     with col1:
         if 'error' not in data_pipeline:
@@ -309,7 +610,10 @@ def main():
     with col6:
         if 'error' not in data_pipeline:
             btc_price = data_pipeline.get('current_btc_price', 0)
-            st.metric("💰 BTC", f"${btc_price:,.0f}")
+            if btc_price > 0:
+                st.metric("💰 BTC", f"${btc_price:,.2f}")
+            else:
+                st.metric("💰 BTC", "N/A")
     
     with col7:
         if 'error' not in data_pipeline:
@@ -341,9 +645,8 @@ def main():
             if total > 0:
                 st.progress(running / total, text=f"Containers: {running}/{total} running")
             
-            # Show container status
             containers = docker_data.get('containers', [])
-            for container in containers[:3]:  # Show only first 3
+            for container in containers[:3]:
                 status_icon = "🟢" if container['status'] == 'running' else "🔴"
                 st.text(f"{status_icon} {container['name']}")
     
@@ -351,9 +654,58 @@ def main():
         st.markdown("**💰 Market Data**")
         if 'error' not in data_pipeline:
             btc_price = data_pipeline.get('current_btc_price', 0)
-            st.metric("Bitcoin Price", f"${btc_price:,.2f}")
+            if btc_price > 0:
+                st.metric("Latest Price", f"${btc_price:,.2f}")
+            else:
+                st.info("No price data available yet")
             st.text(f"Data freshness: {data_pipeline.get('data_freshness_seconds', 0)}s")
-            st.text(f"Success rate: {data_pipeline.get('success_rate_percent', 0)}%")
+            st.text(f"Total records: {data_pipeline.get('total_records', 0):,}")
+
+    # === DATABASE METRICS ===
+    st.subheader("🗄️ Database & Storage")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**📊 PostgreSQL**")
+        db_stats = get_database_stats()
+        if 'error' not in db_stats:
+            st.metric("Database Size", db_stats.get('database_size', 'N/A'))
+            st.metric("Total Tables", len(db_stats.get('tables', [])))
+        else:
+            st.error(f"Error: {db_stats['error']}")
+    
+    with col2:
+        st.markdown("**🪣 MinIO Storage**")
+        minio_stats = get_minio_stats()
+        if 'error' not in minio_stats:
+            st.metric("Total Buckets", minio_stats.get('total_buckets', 0))
+            st.metric("Total Objects", f"{minio_stats.get('total_objects', 0):,}")
+            st.metric("Storage Size", f"{minio_stats.get('total_size_gb', 0):.2f} GB")
+        else:
+            st.error(f"Error: {minio_stats['error']}")
+    
+    with col3:
+        st.markdown("**📈 Pipeline Stats**")
+        st.metric("Processing Rate", f"{data_pipeline.get('processing_rate_per_sec', 0):.2f} rec/s")
+        st.metric("Success Rate", f"{data_pipeline.get('success_rate_percent', 0):.1f}%")
+        if data_pipeline.get('has_data'):
+            st.success("✅ Data flowing")
+        else:
+            st.warning("⚠️ No data yet")
+
+    # === LATEST TRADES ===
+    st.subheader("📈 Latest Trades")
+    
+    trades = get_latest_trades(limit=10)
+    if trades:
+        df = pd.DataFrame(trades)
+        # Format timestamp if present
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("📭 No trades in database yet. Waiting for data from Kafka producer...")
 
     # === PERFORMANCE TRENDS ===
     st.subheader("📈 Performance Trends")
@@ -365,22 +717,22 @@ def main():
     with col1:
         if history['cpu']:
             fig_cpu = create_mini_chart(history['cpu'], "CPU Usage %", "#e74c3c")
-            st.plotly_chart(fig_cpu, use_container_width=True)
+            st.plotly_chart(fig_cpu, use_container_width=True, key="chart_cpu")
     
     with col2:
         if history['memory']:
             fig_mem = create_mini_chart(history['memory'], "Memory Usage %", "#f39c12")
-            st.plotly_chart(fig_mem, use_container_width=True)
+            st.plotly_chart(fig_mem, use_container_width=True, key="chart_memory")
     
     with col3:
         if history['disk']:
             fig_disk = create_mini_chart(history['disk'], "Disk Usage %", "#27ae60")
-            st.plotly_chart(fig_disk, use_container_width=True)
+            st.plotly_chart(fig_disk, use_container_width=True, key="chart_disk")
     
     with col4:
         if history['containers_running']:
             fig_containers = create_mini_chart(history['containers_running'], "Running Containers", "#9b59b6")
-            st.plotly_chart(fig_containers, use_container_width=True)
+            st.plotly_chart(fig_containers, use_container_width=True, key="chart_containers")
 
     # === DETAILED CONTAINER INFO ===
     if 'docker_details' in all_metrics and 'error' not in all_metrics['docker_details']:
@@ -419,13 +771,17 @@ def main():
             alerts.append(("🟡 Warning", f"Stale data: {data_pipeline['data_freshness_seconds']}s"))
         if data_pipeline.get('success_rate_percent', 100) < 99:
             alerts.append(("🟡 Warning", f"Low success rate: {data_pipeline['success_rate_percent']}%"))
+        if not data_pipeline.get('has_data'):
+            alerts.append(("🟡 Info", "Waiting for data from producers"))
     
     if alerts:
         for severity, message in alerts:
             if "🔴" in severity:
-                st.error(f"{severity} {message}")
+                st.error(f"{severity}: {message}")
+            elif "🟡" in severity:
+                st.warning(f"{severity}: {message}")
             else:
-                st.warning(f"{severity} {message}")
+                st.info(f"{severity}: {message}")
     else:
         st.success("🟢 All systems operational")
 
@@ -437,7 +793,7 @@ def main():
     with col1:
         auto_refresh = st.checkbox("Enable auto-refresh", value=True)
     with col2:
-        refresh_rate = st.selectbox("Refresh rate", [5, 10, 30, 60], index=1)
+        refresh_rate = st.selectbox("Refresh rate (seconds)", [5, 10, 30, 60], index=1)
     with col3:
         if st.button("🔄 Refresh Now"):
             st.rerun()
