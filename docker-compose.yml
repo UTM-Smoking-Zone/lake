@@ -64,23 +64,6 @@ services:
     restart: on-failure:3
     command: python3 producer.py
 
-  # kafka-consumer:
-  #   build: ./kafka/kafka-consumer
-  #   container_name: kafka-consumer
-  #   networks: [lakehouse]
-  #   depends_on:
-  #     - kafka
-  #     - minio
-  #     - iceberg-init
-  #   restart: on-failure:3
-  #   command: python3 consumer.py
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 2G
-  #       reservations:
-  #         memory: 1G
-
   kafka-consumer:
     build: ./kafka/kafka-consumer
     container_name: kafka-consumer
@@ -110,6 +93,34 @@ services:
         max-size: "10m"
         max-file: "3"
       
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    networks: [lakehouse]
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 4gb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  duckdb-api:
+    build: ./services/duckdb-api
+    container_name: duckdb-api
+    networks: [lakehouse]
+    ports:
+      - "5433:5433"
+    volumes:
+      - ./data/duckdb:/data
+    environment:
+      - DUCKDB_PATH=/data/trading.duckdb
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+
+  
   # MinIO - S3 Compatible Storage
   minio:
     image: minio/minio:latest
