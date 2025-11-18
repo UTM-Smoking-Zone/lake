@@ -1,39 +1,33 @@
-# 📈 Trading Analytics Platform
+# Trading Analytics Platform
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-326CE5.svg)](https://kubernetes.io/)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104-009688.svg)](https://fastapi.tiangolo.com/)
+Microservices-based real-time crypto trading platform with analytics and ML predictions.
 
-**Microservices-based** real-time crypto trading platform with analytics and ML predictions.
+University Project | Team: Nick, Dan, Damian, Valentina | UTM 2025
 
-> 🎓 **University Project** | Team: Nick, Dan, Damian, Valentina | UTM 2025
-
-## 🏗️ Architecture
+## Architecture
 
 **Microservices:**
-- 🌐 API Gateway (FastAPI + WebSocket) - `:8000`
-- 📊 Portfolio Service - `:8001`
-- 💼 Order Service - `:8002`
-- 📝 Transaction Service - `:8003`
-- 📈 Analytics Service - `:8004`
-- 🤖 ML Service - `:8005`
-- 👤 User Service - `:8006`
-- 🔄 Ingestion Service (Kafka → Iceberg)
+- API Gateway (FastAPI + WebSocket) - :8000
+- Portfolio Service - :8001
+- Order Service - :8002
+- Transaction Service - :8003
+- Analytics Service - :8004
+- ML Service - :8005
+- User Service - :8006
+- Ingestion Service (Kafka to Iceberg)
 
 **Data Pipeline:**
-- WebSocket → Kafka → Iceberg → MinIO S3
+- WebSocket to Kafka to Iceberg to MinIO S3
 - Real-time crypto price ingestion
 
 **Infrastructure:**
 - PostgreSQL (microservices database)
-- Redis (caching + real-time prices)
+- Redis (caching and real-time prices)
 - Kafka (message streaming)
 - MinIO (S3 storage)
 - Apache Spark (data processing)
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # 1. Copy environment file
@@ -47,63 +41,37 @@ cp .env.example .env
 ```
 
 ### Access Services
-```bash
-./test-api.sh
-```
 
-### Service URLs
-- **API Gateway**: http://localhost:8000
-- **Swagger UI**: http://localhost:8000/docs
-- **Kafka UI**: http://localhost:8082
-- **MinIO Console**: http://localhost:9011 (admin/minioadmin)
-- **Spark Master**: http://localhost:8080
+- API Gateway: http://localhost:8000
+- Swagger UI: http://localhost:8000/docs
+- Kafka UI: http://localhost:8090
+- MinIO Console: http://localhost:9011
+- Spark Master: http://localhost:8080
 
-### Stop all services
+### Stop services
+
 ```bash
 docker compose down
 ```
 
-## 📚 Documentation
+## Tech Stack
 
-- **[MICROSERVICES.md](MICROSERVICES.md)** - Quick start guide
-- **[platform/back/README.md](platform/back/README.md)** - Architecture details
-- **[TODO.md](TODO.md)** - Project tasks
-
-## Stack
-
-- **Ingestion**: Bybit WebSocket → Kafka (3 partitions)
-- **Storage**: Iceberg tables (Parquet + ZSTD) on MinIO S3
-- **Catalog**: PostgreSQL metadata
-- **Backend**: FastAPI microservices
-- **Cache**: Redis
-- **Processing**: Apache Spark
-- **Monitoring**: Kafka UI :8090, MinIO Console :9001
-
-## Status
-
-- [x] **Microservices architecture** (8 services)
-- [x] **API Gateway** with WebSocket
-- [x] **PostgreSQL schema** for trading
-- [x] **2M+ records** ingested
-- [x] **Zero data loss** (auto-retry, conflict resolution)
-- [x] **6x compression** (Parquet ZSTD)
-- [x] **ACID transactions** (Iceberg)
+**Backend:** FastAPI, WebSocket, PostgreSQL, Redis  
+**Data Pipeline:** Apache Kafka, Apache Iceberg, Apache Spark, MinIO  
+**Deployment:** Docker Compose, Kubernetes
 
 ## Features
 
-### Trading
-- ✅ Demo wallets ($10,000 virtual balance)
-- ✅ Market & limit orders
-- ✅ Portfolio management
-- ✅ Transaction history
-- ✅ Real-time price feed
+- Market and limit orders
+- Portfolio management
+- Transaction history
+- Real-time price feed
+- OHLCV data (1m, 5m, 1h, 4h, 1d)
+- Technical indicators (SMA, EMA, RSI, MACD)
+- ML price predictions
+- Strategy backtesting
 
-### Analytics
-- ✅ OHLCV data (1m, 5m, 1h, 4h, 1d)
-- ✅ Technical indicators (SMA, EMA, RSI, MACD)
-- ✅ Real-time calculations
-
-### ML
+## API Examples
 - ✅ Price predictions
 - ✅ Strategy backtesting
 - ✅ SMA crossover, RSI strategies
@@ -145,50 +113,20 @@ curl "http://localhost:8000/api/analytics/indicators?symbol=BTCUSDT&indicators=s
 curl "http://localhost:8000/api/ml/predict?symbol=BTCUSDT&horizon=60"
 ```
 
-## 🚀 Deployment
+## Deployment
 
-### Docker Compose (Development)
+### Docker Compose
+
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### Kubernetes (Production)
-```bash
-# Minikube (Local)
-make setup-minikube
+### Kubernetes
 
-# Production cluster
+```bash
 kubectl apply -f k8s/
 ```
 
-**See [KUBERNETES.md](KUBERNETES.md) for detailed deployment guide**
+## License
 
-### Features:
-- ✅ Kubernetes manifests (Deployments, Services, StatefulSets)
-- ✅ Horizontal Pod Autoscaling (HPA)
-- ✅ Ingress Controller (NGINX)
-- ✅ Prometheus + Grafana monitoring
-- ✅ GitHub Actions CI/CD pipeline
-- ✅ Makefile for easy management
-
-## 📊 Monitoring
-
-- **Prometheus**: Metrics collection
-- **Grafana**: Dashboards & visualization
-- **Exporters**: PostgreSQL, Redis, Kafka
-
-Access after deployment:
-```bash
-make port-forward-grafana  # localhost:3000
-```
-
-## Next
-
-- [ ] Frontend (React/Vue dashboard)
-- [ ] WebSocket real-time updates
-- [ ] Authentication (JWT)
-- [ ] Spark Structured Streaming
-- [ ] Silver layer OHLCV aggregations
-- [ ] Service Mesh (Istio)
-- [ ] Distributed tracing (Jaeger)
-- [ ] Unit tests
+MIT License
