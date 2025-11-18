@@ -22,7 +22,7 @@ services:
     container_name: kafka
     networks: [lakehouse]
     ports:
-      - "9092:9092"
+      - "9093:9092"   # Changed to avoid conflict with upgrade_kafka
     depends_on:
       - zookeeper
     environment:
@@ -98,37 +98,171 @@ services:
     container_name: redis
     networks: [lakehouse]
     ports:
-      - "6379:6379"
+      - "6380:6379"   # Changed to avoid conflict with upgrade_redis
     command: redis-server --maxmemory 4gb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-  
-  duckdb-api:
-    build: ./services/duckdb-api
-    container_name: duckdb-api
+
+  # ============================================
+  # MICROSERVICES
+  # ============================================
+
+  # API Gateway - Entry point for all services
+  api-gateway:
+    build: ./platform/back/api-gateway
+    container_name: api-gateway
     networks: [lakehouse]
     ports:
-      - "5433:5433"
-    volumes:
-      - ./data/duckdb:/data
+      - "0.0.0.0:8000:8000"
+    depends_on:
+      - redis
+      - portfolio-service
+      - order-service
+      - transaction-service
+      - analytics-service
+      - ml-service
+      - user-service
     environment:
-      - DUCKDB_PATH=/data/trading.duckdb
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PORTFOLIO_SERVICE_URL=http://portfolio-service:8001
+      - ORDER_SERVICE_URL=http://order-service:8002
+      - TRANSACTION_SERVICE_URL=http://transaction-service:8003
+      - ANALYTICS_SERVICE_URL=http://analytics-service:8004
+      - ML_SERVICE_URL=http://ml-service:8005
+      - USER_SERVICE_URL=http://user-service:8006
 
-  
+  # Ingestion Service - Kafka consumer to Iceberg
+  ingestion-service:
+    build:
+      context: .
+      dockerfile: ./platform/back/ingestion-service/Dockerfile
+    container_name: ingestion-service
+    networks: [lakehouse]
+    depends_on:
+      - kafka
+      - minio
+      - postgres
+      - redis
+    environment:
+      - KAFKA_TOPICS=btcusdt-bybit
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    restart: on-failure:3
+
+  # Portfolio Service - Portfolio & wallet management
+  portfolio-service:
+    build: ./platform/back/portfolio-service
+    container_name: portfolio-service
+    networks: [lakehouse]
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+  # Order Service - Order execution
+  order-service:
+    build: ./platform/back/order-service
+    container_name: order-service
+    networks: [lakehouse]
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+  # Transaction Service - Transaction history
+  transaction-service:
+    build: ./platform/back/transaction-service
+    container_name: transaction-service
+    networks: [lakehouse]
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+  # Analytics Service - Technical indicators
+  analytics-service:
+    build: ./platform/back/analytics-service
+    container_name: analytics-service
+    networks: [lakehouse]
+    ports:
+      - "8004:8004"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+  # ML Service - Predictions & backtesting
+  ml-service:
+    build: ./platform/back/ml-service
+    container_name: ml-service
+    networks: [lakehouse]
+    ports:
+      - "8005:8005"
+    depends_on:
+      - analytics-service
+
+  # User Service - User management
+  user-service:
+    build: ./platform/back/user-service
+    container_name: user-service
+    networks: [lakehouse]
+    ports:
+      - "8006:8006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
   # MinIO - S3 Compatible Storage
   minio:
     image: minio/minio:latest
     container_name: minio
     networks: [lakehouse]
     ports:
-      - "0.0.0.0:9000:9000"
-      - "0.0.0.0:9001:9001"
+      - "0.0.0.0:9010:9000"   # Changed from 9000 to avoid conflicts
+      - "0.0.0.0:9011:9001"   # Changed from 9001 to avoid conflicts
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
@@ -147,7 +281,7 @@ services:
     container_name: postgres
     networks: [lakehouse]
     ports:
-      - "5432:5432"
+      - "5433:5432"   # Changed to avoid conflict with upgrade_postgres
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
@@ -254,11 +388,3 @@ services:
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-
-volumes:
-  postgres_data:
-    driver: local
-  minio_data:
-    driver: local
-  redis_data:                          
-    driver: local

@@ -1,7 +1,27 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType, DoubleType
+import requests
 import time
 import sys
+
+def wait_for_spark():
+    """Wait for Spark Master to be ready
+    """
+    max_attempts = 30
+
+    for attempt in range(max_attempts):
+        try:
+            response = requests.get('http://spark-master:8080')
+            if response.status_code == 200:
+                print("Spark is ready")
+                return True
+        except requests.exceptions.ConnectionError:
+            print(f"Waiting for Spark ... ({attempt + 1}/{max_attempts})")
+            time.sleep(2)
+    
+    raise Exception("Spark failed to start")
+
+
 
 def create_spark_session():
     return SparkSession.builder \
