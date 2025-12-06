@@ -6,16 +6,18 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Установить Python зависимости с PostgreSQL поддержкой
+WORKDIR /app
+
+# Копировать requirements.txt и установить зависимости
+COPY requirements.txt .
 RUN pip install --no-cache-dir \
     numpy==1.24.4 \
-    pyarrow==12.0.1 \
-    confluent-kafka==2.3.0 \
     pyiceberg[sql-postgres,s3fs]==0.7.1 \
     psycopg2-binary==2.9.9 \
-    sqlalchemy==2.0.32
+    sqlalchemy==2.0.32 && \
+    pip install --no-cache-dir -r requirements.txt
 
-WORKDIR /app
+# Копировать исходные файлы
 COPY *.py .
 
 CMD ["python3", "consumer.py"]

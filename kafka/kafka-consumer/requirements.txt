@@ -1,0 +1,5 @@
+confluent-kafka==2.3.0
+pyiceberg==0.5.0
+pyarrow==14.0.1
+pandas==2.1.4
+redis==5.0.1

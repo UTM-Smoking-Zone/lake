@@ -2,6 +2,9 @@
 from collections import deque
 from typing import List
 import time
+import os
+import redis
+from datetime import datetime
 from kafka_client import KafkaClient
 from data_validator import DataValidator  
 from data_transformer import DataTransformer
@@ -26,6 +29,21 @@ class CryptoConsumer:
             self.iceberg_writer.write_batch
         )
         
+        # Initialize Redis connection for real-time prices
+        self.redis_client = redis.Redis(
+            host=os.getenv('REDIS_HOST', 'redis'),
+            port=int(os.getenv('REDIS_PORT', 6379)),
+            decode_responses=True,
+            socket_connect_timeout=5
+        )
+        
+        # Test Redis connection
+        try:
+            self.redis_client.ping()
+            print("✅ Connected to Redis successfully")
+        except Exception as e:
+            print(f"❌ Failed to connect to Redis: {e}")
+        
         # Live data structures (keep for backward compatibility)
         self.live_graph = {}
         self.live_table = deque([], 15)
@@ -34,6 +52,7 @@ class CryptoConsumer:
         self.message_count = 0
         self.error_count = 0
         self.last_log_time = time.time()
+        self.last_redis_update = 0
     
     def start(self, topics: List[str]) -> None:
         self.kafka_client.subscribe(topics)
@@ -78,6 +97,9 @@ class CryptoConsumer:
                 record, message['topic']
             )
             
+            # Update Redis with current price (for Order Service)
+            self._update_redis_price(transformed_record)
+            
             # Update live data structures
             self._update_live_data(record)
             
@@ -87,6 +109,42 @@ class CryptoConsumer:
         except Exception as e:
             self.error_count += 1
             print(f"❌ Error processing message: {e}")
+    
+    def _update_redis_price(self, transformed_record):
+        """Update Redis with the latest price for Order Service"""
+        try:
+            # Get price from transformed record (it should have 'price' field)
+            price = transformed_record.get('price')
+            
+            if price is not None:
+                symbol = transformed_record.get('symbol', 'BTCUSDT')
+                redis_key = f"price:{symbol}"
+                
+                # Convert price to string for Redis
+                price_str = str(price)
+                
+                # Update Redis
+                self.redis_client.set(redis_key, price_str)
+                
+                # Also store timestamp for reference
+                timestamp = transformed_record.get('timestamp')
+                if timestamp:
+                    if isinstance(timestamp, datetime):
+                        timestamp = timestamp.timestamp()
+                    self.redis_client.set(f"{redis_key}:timestamp", str(timestamp))
+                
+                # Log occasionally (every 50 updates or every 10 seconds)
+                current_time = time.time()
+                if self.message_count % 50 == 0 or current_time - self.last_redis_update > 10:
+                    print(f"💾 Updated Redis: {redis_key} = {price_str}")
+                    self.last_redis_update = current_time
+            else:
+                if self.message_count % 1000 == 0:
+                    print(f"⚠️ No price found in transformed record: {transformed_record.keys()}")
+                    
+        except Exception as e:
+            if self.message_count % 1000 == 0:
+                print(f"⚠️ Error updating Redis: {e}")
     
     def _update_live_data(self, record):
         # Keep existing live data logic for backward compatibility
@@ -98,6 +156,10 @@ class CryptoConsumer:
         print(f"📈 Final stats: {self.message_count} messages processed, {self.error_count} errors")
         self.batch_manager.close()
         self.kafka_client.close()
+        try:
+            self.redis_client.close()
+        except:
+            pass
 
 def main():
     consumer = CryptoConsumer()

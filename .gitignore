@@ -63,3 +63,12 @@ temp/
 node_modules/
 package-lock.json
 yarn.lock
+
+# Test files (for development)
+test-*.js
+test-*.html
+CHECK_FRONTEND.md
+
+# Root level package.json is for testing only
+/package.json
+/package-lock.json

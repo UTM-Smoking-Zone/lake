@@ -71,7 +71,6 @@ services:
     depends_on:
       - kafka
       - minio
-      - iceberg-init
     restart: on-failure:3
     command: python3 -u consumer.py
     environment:
@@ -134,30 +133,6 @@ services:
       - ANALYTICS_SERVICE_URL=http://analytics-service:8004
       - ML_SERVICE_URL=http://ml-service:8005
       - USER_SERVICE_URL=http://user-service:8006
-
-  # Ingestion Service - Kafka consumer to Iceberg
-  ingestion-service:
-    build:
-      context: .
-      dockerfile: ./platform/back/ingestion-service/Dockerfile
-    container_name: ingestion-service
-    networks: [lakehouse]
-    depends_on:
-      - kafka
-      - minio
-      - postgres
-      - redis
-    environment:
-      - KAFKA_TOPICS=btcusdt-bybit
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    restart: on-failure:3
 
   # Portfolio Service - Portfolio & wallet management
   portfolio-service:
@@ -254,6 +229,26 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+  # Market Data Service - NestJS backend with Socket.IO for real-time Binance data
+  market-data-service:
+    build: ./platform/back
+    container_name: market-data-service
+    networks: [lakehouse]
+    ports:
+      - "3001:3001"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - PORT=3001
+      - BINANCE_WS=wss://stream.binance.com:9443/ws
+      - BINANCE_REST=https://api.binance.com
+      - DEFAULT_SYMBOL=BTCUSDT
+      - DEFAULT_INTERVAL=1m
+      - DEFAULT_LIMIT=500
 
   # MinIO - S3 Compatible Storage
   minio:
@@ -371,20 +366,33 @@ services:
       echo 'Buckets created successfully'
       "
 
-  iceberg-init:
-    image: apache/spark:3.5.0
-    container_name: iceberg-init
+  # iceberg-init:
+  #   image: apache/spark:3.5.0
+  #   container_name: iceberg-init
+  #   networks: [lakehouse]
+  #   depends_on:
+  #     - spark-master
+  #     - minio
+  #   command: >
+  #     bash -c "
+  #     pip install --quiet pyspark==3.5.0 pyiceberg==0.5.0 &&
+  #     python3 /opt/scripts/init-iceberg.py
+  #     "
+  #   volumes:
+  #     - ./scripts:/opt/scripts
+  #   environment:
+  #     - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+  #     - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+
+  frontend:
+    build: ./platform/front
+    container_name: frontend
     networks: [lakehouse]
+    ports:
+      - "3000:3000"
     depends_on:
-      - spark-master
-      - minio
-    command: >
-      bash -c "
-      pip install --quiet pyspark==3.5.0 pyiceberg==0.5.0 &&
-      python3 /opt/scripts/init-iceberg.py
-      "
-    volumes:
-      - ./scripts:/opt/scripts
+      - api-gateway
     environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
+    restart: unless-stopped
