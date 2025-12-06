@@ -1,331 +1,193 @@
-# 🌊 Lake - Real-time Cryptocurrency Trading Platform
+# Trading Analytics Platform
 
-A modern, real-time cryptocurrency trading platform built with a lakehouse architecture, featuring live market data streaming from Binance and advanced data processing capabilities.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933.svg)](https://nodejs.org/)
 
-**University Project | Team: Nick, Dan, Damian, Valentina | UTM 2025**
+Microservices-based real-time crypto trading platform with analytics and ML predictions.
 
-## 🏗️ Architecture
+University Project | Team: Nick, Dan, Damian, Valentina | UTM 2025
 
-```
-┌─────────────────┐
-│   Binance API   │ (WebSocket + REST)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────┐
-│  Market Data Service (NestJS + Socket.IO)   │
-│  - Real-time Binance WebSocket stream       │
-│  - Historical candlestick data (REST API)   │
-│  - Socket.IO broadcasting to clients        │
-└─────────┬───────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────┐
-│  Frontend (Next.js 16 + React 19)           │
-│  - Lightweight-charts visualization         │
-│  - Real-time Socket.IO updates              │
-│  - Responsive candlestick charts            │
-└─────────────────────────────────────────────┘
+## Architecture
 
-Data Pipeline (Parallel):
-┌──────────┐   ┌────────┐   ┌──────────────┐   ┌────────────┐
-│ Producer │──▶│ Kafka  │──▶│   Consumer   │──▶│ Iceberg DB │
-└──────────┘   └────────┘   │  + Redis     │   └────────────┘
-                             └──────────────┘
-```
+**Microservices:**
+- API Gateway (Node.js + WebSocket) - :8000
+- Portfolio Service - :8001
+- Order Service - :8002
+- Transaction Service - :8003
+- Analytics Service - :8004
+- ML Service - :8005
+- User Service - :8006
+- Market Data Service (NestJS + Binance) - :3001
 
-## 🚀 Features
+**Data Pipeline:**
+- Binance WebSocket → Kafka → Iceberg → MinIO S3
+- Real-time crypto price ingestion
 
-### Real-time Market Data
-- **Live Binance WebSocket Stream** - Direct connection to Binance for BTC/USDT 1m candlesticks
-- **Socket.IO Broadcasting** - Real-time price updates to all connected clients
-- **Historical Data API** - REST endpoint for loading candlestick history
+**Infrastructure:**
+- PostgreSQL (microservices database)
+- Redis (caching + real-time prices)
+- Kafka (message streaming)
+- MinIO (S3 storage)
+- Apache Spark (data processing)
 
-### Data Processing
-- **Apache Kafka** - High-throughput message streaming
-- **Apache Iceberg** - Modern lakehouse table format
-- **Apache Spark** - Distributed data processing
-- **Redis** - Low-latency caching layer
+## Quick Start
 
-### Frontend
-- **Next.js 16** - Latest React framework with Turbopack
-- **Lightweight-charts** - Professional candlestick charts
-- **Socket.IO Client** - Real-time bidirectional communication
-- **Tailwind CSS** - Modern, responsive styling
-
-### Infrastructure
-- **Docker Compose** - Complete containerized environment
-- **PostgreSQL** - Metadata catalog for Iceberg
-- **MinIO** - S3-compatible object storage
-- **Kafka UI** - Web interface for monitoring Kafka
-
-## 📋 Prerequisites
-
-- Docker & Docker Compose
-- 10GB+ free disk space
-- Network access to Binance API (api.binance.com)
-
-## 🔧 Quick Start
-
-### 1. Clone the Repository
 ```bash
-git clone https://github.com/UTM-Smoking-Zone/lake.git
-cd lake
-```
-
-### 2. Create Environment File
-```bash
+# Copy environment file
 cp .env.example .env
-```
 
-Edit `.env` with your configuration (defaults work for local development).
-
-### 3. Start the Platform
-```bash
+# Start all services
 docker compose up -d
+
+# Check service health
+curl http://localhost:8000/health
 ```
 
-This will start:
-- ✅ Market Data Service (port 3001)
-- ✅ Frontend (port 3000)
-- ✅ Kafka (port 9093)
-- ✅ Redis (port 6380)
-- ✅ PostgreSQL (port 5433)
-- ✅ MinIO (ports 9010, 9011)
-- ✅ Spark Master & Worker
-- ✅ Kafka UI (port 8090)
+### Access Services
 
-### 4. Access the Application
+- **API Gateway**: http://localhost:8000
+- **Market Data**: http://localhost:3001
+- **Frontend**: http://localhost:3000
+- **Kafka UI**: http://localhost:8090
+- **MinIO Console**: http://localhost:9011 (minioadmin/minioadmin)
+- **Spark Master**: http://localhost:8080
 
-**Frontend (Main Application):**
-```
-http://localhost:3000
-```
-
-**Kafka UI:**
-```
-http://localhost:8090
-```
-
-**MinIO Console:**
-```
-http://localhost:9011
-Username: minioadmin
-Password: minioadmin
-```
-
-**Spark UI:**
-```
-http://localhost:8080
-```
-
-## 🧪 Testing
-
-### Run All Tests
+### Stop all services
 ```bash
-# Backend health check
-curl http://localhost:3001/candles?limit=1
-
-# Check if Binance stream is connected
-docker compose logs market-data-service | grep "Connected to Binance"
-
-# View real-time updates
-docker compose logs market-data-service --follow
+docker compose down
 ```
 
-### Test Socket.IO Connection
-The frontend automatically connects to Socket.IO when you open http://localhost:3000
+## Stack
 
-To check browser console:
-1. Open http://localhost:3000
-2. Press F12 (Developer Tools)
-3. Go to Console tab
-4. You should see connection logs
+- **Ingestion**: Binance WebSocket → Kafka (3 partitions)
+- **Storage**: Iceberg tables (Parquet + ZSTD) on MinIO S3
+- **Catalog**: PostgreSQL metadata
+- **Backend**: Node.js microservices + NestJS
+- **Cache**: Redis
+- **Processing**: Apache Spark
+- **Monitoring**: Kafka UI :8090, MinIO Console :9011
 
-## 📊 API Documentation
+## Status
 
-### REST API
+- Microservices architecture (8 services)
+- API Gateway with WebSocket
+- PostgreSQL schema for trading
+- Real-time Binance data stream
+- Zero data loss (auto-retry, conflict resolution)
+- 6x compression (Parquet ZSTD)
+- ACID transactions (Iceberg)
 
-#### GET /candles
-Retrieve historical candlestick data from Binance.
+## Features
 
-**Parameters:**
-- `symbol` (optional): Trading pair (default: BTCUSDT)
-- `interval` (optional): Timeframe (default: 1m)
-  - Valid values: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
-- `limit` (optional): Number of candles (default: 500, max: 1000)
+### Trading
+- Demo wallets ($10,000 virtual balance)
+- Market & limit orders
+- Portfolio management
+- Transaction history
+- Real-time price feed from Binance
 
-**Example:**
+### Analytics
+- OHLCV data (1m, 5m, 1h, 4h, 1d)
+- Technical indicators (SMA, EMA, RSI, MACD)
+- Real-time calculations
+
+### ML
+- Price predictions
+- Strategy backtesting
+- SMA crossover, RSI strategies
+
+## API Examples
+
+### Portfolio
+```bash
+curl http://localhost:8000/api/portfolio/user123
+```
+
+### Create Order
+```bash
+curl -X POST http://localhost:8000/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user123","symbol":"BTCUSDT","type":"market","side":"buy","amount":0.01}'
+```
+
+### Get Transactions
+```bash
+curl http://localhost:8000/api/transactions/user123
+```
+
+### Technical Indicators
+```bash
+curl "http://localhost:8000/api/analytics/indicators?symbol=BTCUSDT&indicators=sma,rsi"
+```
+
+### ML Prediction
+```bash
+curl "http://localhost:8000/api/ml/predict?symbol=BTCUSDT&horizon=60"
+```
+
+### Market Data (Binance)
 ```bash
 curl "http://localhost:3001/candles?symbol=BTCUSDT&interval=1m&limit=100"
 ```
 
-**Response:**
-```json
-[
-  {
-    "time": 1765009200,
-    "open": 89553.81,
-    "high": 89553.82,
-    "low": 89513.63,
-    "close": 89513.64
-  }
-]
+## Testing
+
+```bash
+# Test all services
+cd platform/services/api-gateway && npm test
+cd platform/services/portfolio-service && npm test
+cd platform/services/order-service && npm test
+cd platform/services/transaction-service && npm test
+cd platform/services/analytics-service && npm test
+cd platform/services/ml-service && npm test
+cd platform/services/user-service && npm test
+
+# Test market data service
+cd platform/back && npm test
 ```
 
-### WebSocket API (Socket.IO)
-
-**Endpoint:** `ws://localhost:3001/market`
-
-**Events:**
-
-#### Client → Server
-- `connect` - Automatically handled by Socket.IO
-
-#### Server → Client
-- `connected` - Server confirmation message
-- `kline` - Real-time candlestick update
-
-**Kline Event Format:**
-```json
-{
-  "symbol": "BTCUSDT",
-  "interval": "1m",
-  "time": 1765009500,
-  "open": 89406.05,
-  "high": 89437.3,
-  "low": 89384.55,
-  "close": 89384.56,
-  "isFinal": false
-}
-```
-
-## 🛠️ Development
+## Development
 
 ### Project Structure
 ```
 lake/
-├── docker-compose.yml          # Orchestration config
+├── docker-compose.yml
 ├── kafka/
-│   ├── kafka-producer/         # Mock data generator
-│   └── kafka-consumer/         # Kafka → Iceberg + Redis
+│   ├── kafka-producer/
+│   └── kafka-consumer/
 ├── platform/
-│   ├── back/                   # NestJS backend
-│   │   ├── src/
-│   │   │   ├── candles/        # Historical data module
-│   │   │   └── market/         # WebSocket gateway
-│   │   └── Dockerfile
-│   └── front/                  # Next.js frontend
-│       ├── src/
-│       │   ├── app/            # Next.js pages
-│       │   └── components/     # React components
-│       └── Dockerfile
-├── scripts/                    # Initialization scripts
-└── data/                      # Persistent data (gitignored)
+│   ├── services/
+│   │   ├── api-gateway/
+│   │   ├── portfolio-service/
+│   │   ├── order-service/
+│   │   ├── transaction-service/
+│   │   ├── analytics-service/
+│   │   ├── ml-service/
+│   │   └── user-service/
+│   ├── back/                  # NestJS market data
+│   └── front/                 # Next.js frontend
+└── scripts/
 ```
 
-### Backend Development
-
-**Tech Stack:** NestJS + TypeScript + Socket.IO + Axios
+### Local Development
 
 ```bash
-cd platform/back
-npm install
-npm run start:dev
-```
+# Start infrastructure only
+docker compose up -d postgres redis kafka minio
 
-**Key Files:**
-- `src/main.ts` - Application entry point
-- `src/market/market.gateway.ts` - WebSocket gateway for Binance stream
-- `src/candles/candles.service.ts` - Historical data fetching
-
-### Frontend Development
-
-**Tech Stack:** Next.js 16 + React 19 + TypeScript + Lightweight-charts
-
-```bash
-cd platform/front
+# Run service locally
+cd platform/services/api-gateway
 npm install
 npm run dev
 ```
 
-**Key Files:**
-- `src/app/page.tsx` - Main page
-- `src/components/BtcCandles.tsx` - Chart component
+## Monitoring
 
-## 🔍 Troubleshooting
+- **Kafka UI**: http://localhost:8090
+- **MinIO Console**: http://localhost:9011
+- **Spark UI**: http://localhost:8080
 
-### Frontend shows blank chart
-1. Check browser console (F12) for errors
-2. Verify backend is running: `curl http://localhost:3001/candles?limit=1`
-3. Check Socket.IO connection: `docker compose logs market-data-service`
+## License
 
-### Binance connection failed
-1. Check internet connection
-2. Verify Binance API is accessible: `curl https://api.binance.com/api/v3/ping`
-3. Check Docker logs: `docker compose logs market-data-service`
-
-### Kafka consumer errors
-1. Check Kafka is healthy: `docker compose ps kafka`
-2. Verify topics exist: Open http://localhost:8090
-3. Check consumer logs: `docker compose logs kafka-consumer`
-
-### Disk space issues
-```bash
-# Check disk usage
-df -h
-
-# Clean up Docker
-docker system prune -a --volumes
-
-# Clean up data directories
-sudo rm -rf data/minio/warehouse/*
-```
-
-## 📝 Environment Variables
-
-Key environment variables (see `.env`):
-
-```bash
-# PostgreSQL
-POSTGRES_DB=trading
-POSTGRES_USER=trading_user
-POSTGRES_PASSWORD=trading_pass
-
-# MinIO
-MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin
-
-# Binance (optional - uses defaults)
-BINANCE_WS=wss://stream.binance.com:9443/ws
-BINANCE_REST=https://api.binance.com
-DEFAULT_SYMBOL=BTCUSDT
-DEFAULT_INTERVAL=1m
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
-
-## 📜 License
-
-This project is part of the UTM Smoking Zone initiative.
-
-## 🙏 Acknowledgments
-
-- Built with [NestJS](https://nestjs.com/)
-- Frontend powered by [Next.js](https://nextjs.org/)
-- Charts by [TradingView Lightweight Charts](https://www.tradingview.com/lightweight-charts/)
-- Data from [Binance API](https://binance-docs.github.io/apidocs/)
-- Lakehouse architecture with [Apache Iceberg](https://iceberg.apache.org/)
-
----
-
-**Current Version:** 2.0.0 (NestJS Rewrite)
-**Last Updated:** December 2025
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+MIT License - University Project UTM 2025

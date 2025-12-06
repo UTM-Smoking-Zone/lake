@@ -106,21 +106,24 @@ services:
       retries: 5
 
   # ============================================
-  # MICROSERVICES (Node.js)
+  # MICROSERVICES
   # ============================================
 
-  # API Gateway - Entry point with WebSocket
+  # API Gateway - Entry point for all services
   api-gateway:
-    build: ./platform/services/api-gateway
+    build: ./platform/back/api-gateway
     container_name: api-gateway
     networks: [lakehouse]
     ports:
       - "0.0.0.0:8000:8000"
     depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      - redis
+      - portfolio-service
+      - order-service
+      - transaction-service
+      - analytics-service
+      - ml-service
+      - user-service
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -133,7 +136,7 @@ services:
 
   # Portfolio Service - Portfolio & wallet management
   portfolio-service:
-    build: ./platform/services/portfolio-service
+    build: ./platform/back/portfolio-service
     container_name: portfolio-service
     networks: [lakehouse]
     ports:
@@ -150,7 +153,7 @@ services:
 
   # Order Service - Order execution
   order-service:
-    build: ./platform/services/order-service
+    build: ./platform/back/order-service
     container_name: order-service
     networks: [lakehouse]
     ports:
@@ -171,7 +174,7 @@ services:
 
   # Transaction Service - Transaction history
   transaction-service:
-    build: ./platform/services/transaction-service
+    build: ./platform/back/transaction-service
     container_name: transaction-service
     networks: [lakehouse]
     ports:
@@ -188,7 +191,7 @@ services:
 
   # Analytics Service - Technical indicators
   analytics-service:
-    build: ./platform/services/analytics-service
+    build: ./platform/back/analytics-service
     container_name: analytics-service
     networks: [lakehouse]
     ports:
@@ -202,15 +205,17 @@ services:
 
   # ML Service - Predictions & backtesting
   ml-service:
-    build: ./platform/services/ml-service
+    build: ./platform/back/ml-service
     container_name: ml-service
     networks: [lakehouse]
     ports:
       - "8005:8005"
+    depends_on:
+      - analytics-service
 
   # User Service - User management
   user-service:
-    build: ./platform/services/user-service
+    build: ./platform/back/user-service
     container_name: user-service
     networks: [lakehouse]
     ports:
