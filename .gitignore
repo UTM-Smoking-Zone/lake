@@ -57,18 +57,25 @@ temp/
 *.tmp
 
 # Docker
-.dockerignore
+# .dockerignore files should be committed
+docker-compose.override.yml
+docker-compose.*.local.yml
 
 # Node (if frontend added later)
 node_modules/
 package-lock.json
 yarn.lock
 
-# Test files (for development)
-test-*.js
-test-*.html
-CHECK_FRONTEND.md
+# Test files (for development only - in root)
+/test-*.js
+/test-*.html
+/test-*.sh
+/CHECK_FRONTEND.md
 
 # Root level package.json is for testing only
 /package.json
 /package-lock.json
+
+# Backup files
+*.backup
+docker-compose.yml.backup

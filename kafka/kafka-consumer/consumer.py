@@ -6,9 +6,10 @@ import os
 import redis
 from datetime import datetime
 from kafka_client import KafkaClient
-from data_validator import DataValidator  
+from data_validator import DataValidator
 from data_transformer import DataTransformer
 from iceberg_writer import IcebergWriter
+from postgres_writer import PostgresWriter
 from batch_manager import BatchManager
 from config import KafkaConfig, IcebergConfig, BatchConfig
 
@@ -24,8 +25,9 @@ class CryptoConsumer:
         self.validator = DataValidator()
         self.transformer = DataTransformer()
         self.iceberg_writer = IcebergWriter(self.iceberg_config)
+        self.postgres_writer = PostgresWriter()
         self.batch_manager = BatchManager(
-            self.batch_config, 
+            self.batch_config,
             self.iceberg_writer.write_batch
         )
         
@@ -53,6 +55,7 @@ class CryptoConsumer:
         self.error_count = 0
         self.last_log_time = time.time()
         self.last_redis_update = 0
+        self.last_postgres_flush = time.time()
     
     def start(self, topics: List[str]) -> None:
         self.kafka_client.subscribe(topics)
@@ -75,6 +78,12 @@ class CryptoConsumer:
                 if self.message_count % 100 == 0:
                     print(f"📊 Processed {self.message_count} messages (errors: {self.error_count})")
                     self.last_log_time = time.time()
+
+                # Flush PostgreSQL candles every 30 seconds
+                current_time = time.time()
+                if current_time - self.last_postgres_flush > 30:
+                    self.postgres_writer.flush_candles()
+                    self.last_postgres_flush = current_time
                 
         except KeyboardInterrupt:
             print("Received interrupt signal")
@@ -99,11 +108,14 @@ class CryptoConsumer:
             
             # Update Redis with current price (for Order Service)
             self._update_redis_price(transformed_record)
-            
+
+            # Add trade to PostgreSQL writer for OHLCV aggregation
+            self.postgres_writer.add_trade(transformed_record)
+
             # Update live data structures
             self._update_live_data(record)
-            
-            # Add to batch for persistence
+
+            # Add to batch for persistence (Iceberg)
             self.batch_manager.add_record(transformed_record)
             
         except Exception as e:
@@ -154,6 +166,7 @@ class CryptoConsumer:
     def close(self):
         print(f"\n🛑 Shutting down consumer...")
         print(f"📈 Final stats: {self.message_count} messages processed, {self.error_count} errors")
+        self.postgres_writer.close()
         self.batch_manager.close()
         self.kafka_client.close()
         try:
