@@ -1,11 +1,20 @@
 const express = require('express');
 const cors = require('cors');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 8004;
+
+const pool = new Pool({
+  host: process.env.POSTGRES_HOST || 'postgres',
+  port: process.env.POSTGRES_PORT || 5432,
+  database: process.env.POSTGRES_DB || 'lakehouse',
+  user: process.env.POSTGRES_USER || 'admin',
+  password: process.env.POSTGRES_PASSWORD || 'admin123'
+});
 
 function calculateSMA(data, period) {
   const result = [];
@@ -38,21 +47,109 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'analytics-service' });
 });
 
-app.get('/indicators', (req, res) => {
-  const { symbol, indicators } = req.query;
-  const mockPrices = Array.from({ length: 100 }, () => 89000 + Math.random() * 1000);
-  
-  const result = {};
-  
-  if (indicators.includes('sma')) {
-    result.sma = calculateSMA(mockPrices, 20);
+app.get('/ohlcv/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const { interval = '1h', limit = 100 } = req.query;
+
+    // Get symbol_id
+    const symbolResult = await pool.query(
+      'SELECT id FROM symbols WHERE symbol = $1',
+      [symbol]
+    );
+
+    if (symbolResult.rows.length === 0) {
+      return res.status(404).json({ error: `Symbol ${symbol} not found` });
+    }
+
+    const symbolId = symbolResult.rows[0].id;
+
+    // Map interval to table
+    const tableMap = {
+      '1m': 'ohlcv_1m',
+      '5m': 'ohlcv_5m',
+      '15m': 'ohlcv_15m',
+      '1h': 'ohlcv_1h'
+    };
+
+    const table = tableMap[interval] || 'ohlcv_1h';
+
+    const result = await pool.query(`
+      SELECT
+        open_ts,
+        open,
+        high,
+        low,
+        close,
+        volume
+      FROM ${table}
+      WHERE symbol_id = $1
+      ORDER BY open_ts DESC
+      LIMIT $2
+    `, [symbolId, limit]);
+
+    res.json(result.rows.reverse()); // Return oldest first
+  } catch (error) {
+    console.error('Get OHLCV error:', error);
+    res.status(500).json({ error: error.message });
   }
-  
-  if (indicators.includes('rsi')) {
-    result.rsi = calculateRSI(mockPrices);
+});
+
+app.get('/indicators', async (req, res) => {
+  try {
+    const { symbol, indicators = 'sma,rsi', interval = '1h', limit = 100 } = req.query;
+
+    // Get symbol_id
+    const symbolResult = await pool.query(
+      'SELECT id FROM symbols WHERE symbol = $1',
+      [symbol || 'BTCUSDT']
+    );
+
+    if (symbolResult.rows.length === 0) {
+      return res.status(404).json({ error: `Symbol ${symbol} not found` });
+    }
+
+    const symbolId = symbolResult.rows[0].id;
+
+    // Get price data from OHLCV
+    const tableMap = {
+      '1m': 'ohlcv_1m',
+      '5m': 'ohlcv_5m',
+      '15m': 'ohlcv_15m',
+      '1h': 'ohlcv_1h'
+    };
+
+    const table = tableMap[interval] || 'ohlcv_1h';
+
+    const ohlcvResult = await pool.query(`
+      SELECT close
+      FROM ${table}
+      WHERE symbol_id = $1
+      ORDER BY open_ts ASC
+      LIMIT $2
+    `, [symbolId, limit]);
+
+    if (ohlcvResult.rows.length === 0) {
+      return res.status(404).json({ error: 'No price data available for this symbol' });
+    }
+
+    const prices = ohlcvResult.rows.map(row => parseFloat(row.close));
+    const result = {};
+    const indicatorList = indicators.split(',');
+
+    if (indicatorList.includes('sma')) {
+      result.sma = calculateSMA(prices, 20);
+    }
+
+    if (indicatorList.includes('rsi')) {
+      result.rsi = calculateRSI(prices);
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Calculate indicators error:', error);
+    res.status(500).json({ error: error.message });
   }
-  
-  res.json(result);
 });
 
 app.listen(PORT, () => {
