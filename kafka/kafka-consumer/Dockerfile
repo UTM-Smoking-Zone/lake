@@ -18,6 +18,6 @@ RUN pip install --no-cache-dir \
     pip install --no-cache-dir -r requirements.txt
 
 # Копировать исходные файлы
-COPY *.py .
+COPY *.py ./
 
 CMD ["python3", "consumer.py"]

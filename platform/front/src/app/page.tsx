@@ -1,39 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Page() {
-  const [BtcCandles, setBtcCandles] = useState<any>(null);
+  const router = useRouter();
+  const { user, isLoading } = useAuth();
 
   useEffect(() => {
-    // Import component only on client side
-    import('../components/BtcCandles').then((mod) => {
-      setBtcCandles(() => mod.default);
-    });
-  }, []);
+    if (!isLoading) {
+      if (user) {
+        router.push('/dashboard');
+      } else {
+        router.push('/auth');
+      }
+    }
+  }, [user, isLoading, router]);
 
   return (
-    <main style={{ padding: 16 }}>
-      <h1 style={{ margin: 0, marginBottom: 12, fontSize: 22 }}>BTC/USDT — Candlesticks</h1>
-      {BtcCandles ? (
-        <BtcCandles backendBaseUrl="http://localhost:3001" />
-      ) : (
-        <div style={{
-          width: '100%',
-          height: 520,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: '#0b0f14',
-          color: '#e6e9ef',
-          borderRadius: 8
-        }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
-            <div>Loading chart...</div>
-          </div>
-        </div>
-      )}
-    </main>
+    <div className="min-h-screen flex items-center justify-center bg-gray-900">
+      <div className="text-white text-xl">Loading...</div>
+    </div>
   );
 }

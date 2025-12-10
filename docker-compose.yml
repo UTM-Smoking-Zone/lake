@@ -291,7 +291,7 @@ services:
     container_name: spark-master
     networks: [lakehouse]
     ports:
-      - "0.0.0.0:8080:8080"
+      - "0.0.0.0:8081:8080"
       - "0.0.0.0:7077:7077"
     environment:
       - SPARK_MODE=master
