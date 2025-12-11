@@ -44,7 +44,7 @@ docker compose logs -f api-gateway
 - **User Service**: http://localhost:8006
 - **MinIO Console**: http://localhost:9011 (minioadmin/minioadmin123)
 - **Kafka UI**: http://localhost:8090
-- **PostgreSQL**: localhost:5433 (admin/admin123)
+- **PostgreSQL**: localhost:5432 (admin/admin123)
 
 ## Common Commands
 
