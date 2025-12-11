@@ -271,7 +271,7 @@ services:
     container_name: postgres
     networks: [lakehouse]
     ports:
-      - "5433:5432"   # Changed to avoid conflict with upgrade_postgres
+      - "5432:5432"   # Changed to avoid conflict with upgrade_postgres
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}

@@ -15,8 +15,7 @@ export class AuthService {
     const user = await this.usersService.create(
       registerDto.email,
       registerDto.password,
-      registerDto.firstName,
-      registerDto.lastName,
+      registerDto.displayName,
     );
 
     const payload = { email: user.email, sub: user.id };
@@ -25,8 +24,7 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        displayName: user.display_name,
       },
     };
   }
@@ -42,14 +40,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Update last login timestamp
+    await this.usersService.updateLastLogin(user.id);
+
     const payload = { email: user.email, sub: user.id };
     return {
       access_token: this.jwtService.sign(payload),
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        displayName: user.display_name,
       },
     };
   }
@@ -62,8 +62,7 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      displayName: user.display_name,
     };
   }
 }
