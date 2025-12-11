@@ -1,0 +1,126 @@
+@startuml Lakehouse Architecture
+
+skinparam rectangle {
+    BackgroundColor<<frontend>> LightBlue
+    BackgroundColor<<backend>> LightGreen
+    BackgroundColor<<storage>> LightYellow
+    BackgroundColor<<messaging>> LightPink
+    BackgroundColor<<cache>> Orange
+}
+
+title Crypto Trading Lakehouse Platform - Architecture
+
+' Frontend Layer
+package "Frontend Layer" {
+    rectangle "Next.js Frontend\n:3000" <<frontend>> as frontend
+}
+
+' API Gateway Layer
+package "API Gateway Layer" {
+    rectangle "API Gateway\n:8000\n(Express + WebSocket)" <<backend>> as gateway
+}
+
+' Microservices Layer
+package "Microservices Layer" {
+    rectangle "User Service\n:8006\n(Auth, Users)" <<backend>> as user
+    rectangle "Portfolio Service\n:8001\n(Portfolio, Balance)" <<backend>> as portfolio
+    rectangle "Order Service\n:8002\n(Orders, Trading)" <<backend>> as order
+    rectangle "Transaction Service\n:8003\n(Transactions)" <<backend>> as transaction
+    rectangle "Analytics Service\n:8004\n(OHLCV, Indicators)" <<backend>> as analytics
+    rectangle "ML Service\n:8005\n(Predictions, Signals)" <<backend>> as ml
+    rectangle "Market Data Service\n:3001\n(Real-time Data)" <<backend>> as market
+}
+
+' Data Streaming Layer
+package "Data Streaming Layer" {
+    rectangle "Kafka Producer\n(Binance WebSocket)" <<messaging>> as producer
+    rectangle "Apache Kafka\n:9093" <<messaging>> as kafka
+    rectangle "Kafka Consumer\n(OHLCV Aggregator)" <<messaging>> as consumer
+    rectangle "Kafka UI\n:8090" <<messaging>> as kafkaui
+}
+
+' Storage Layer
+package "Storage Layer" {
+    database "PostgreSQL\n:5432\n(OLTP + Iceberg Catalog)" <<storage>> as postgres
+    database "MinIO S3\n:9000\n(Data Lake)" <<storage>> as minio
+    database "Redis\n:6380\n(Cache + Real-time)" <<cache>> as redis
+}
+
+' Infrastructure
+package "Infrastructure" {
+    rectangle "Zookeeper\n:2181" as zookeeper
+}
+
+' Frontend to Gateway
+frontend --> gateway : HTTP/WebSocket
+
+' Gateway to Services
+gateway --> user : REST
+gateway --> portfolio : REST
+gateway --> order : REST
+gateway --> transaction : REST
+gateway --> analytics : REST
+gateway --> ml : REST
+gateway --> market : REST
+
+' Services to Storage
+user --> postgres : SQL
+portfolio --> postgres : SQL
+order --> postgres : SQL
+transaction --> postgres : SQL
+analytics --> postgres : SQL
+ml --> postgres : SQL
+market --> postgres : SQL
+
+' Services to Redis
+gateway --> redis : Price Cache
+order --> redis : Read Prices
+market --> redis : Update Prices
+
+' Data Streaming Flow
+producer --> kafka : Trade Messages
+kafka --> consumer : Consume Trades
+consumer --> postgres : Write OHLCV
+consumer --> minio : Write Iceberg
+consumer --> redis : Update Prices
+
+' Infrastructure
+kafka --> zookeeper : Coordination
+kafkaui --> kafka : Monitoring
+
+' Real-time Data Flow
+market -.-> kafka : Subscribe
+
+legend right
+    **Component Types:**
+    <#LightBlue> Frontend
+    <#LightGreen> Backend Service
+    <#LightYellow> Storage
+    <#LightPink> Messaging
+    <#Orange> Cache
+endlegend
+
+note bottom of consumer
+    **Kafka Consumer**
+    Processes 2.4M+ messages
+    - Aggregates to 1m candles
+    - Writes to PostgreSQL
+    - Persists to Iceberg
+    - Updates Redis prices
+end note
+
+note bottom of postgres
+    **PostgreSQL**
+    - OLTP database
+    - Iceberg catalog
+    - OHLCV data storage
+end note
+
+note bottom of minio
+    **MinIO S3**
+    - Iceberg tables
+    - Long-term storage
+    - Data lake
+end note
+
+@enduml

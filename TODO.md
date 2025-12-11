@@ -1,207 +1,311 @@
-# TODO - Trading Analytics Platform
+# TODO - Crypto Trading Lakehouse Platform
 
-## ✅ COMPLETED (Microservices Architecture)
+**University Project | Team: Nick, Dan, Damian, Valentina | UTM 2025**
 
-### Infrastructure & Core Services
-- [x] Docker Compose orchestration
-- [x] Kafka + Zookeeper
-- [x] PostgreSQL + Redis + MinIO
-- [x] Apache Spark cluster
-- [x] WebSocket data ingestion
-- [x] Iceberg Bronze layer
+---
+
+## ✅ COMPLETED
+
+### Infrastructure
+- [x] Docker Compose orchestration (17 containers)
+- [x] Apache Kafka + Zookeeper (message streaming)
+- [x] PostgreSQL 15 (OLTP + Iceberg catalog)
+- [x] Redis 7 (caching + real-time prices)
+- [x] MinIO S3 (Data Lake storage)
+- [x] ~~Apache Spark~~ **REMOVED** (not needed, using PyIceberg)
 
 ### Microservices (8 services)
-- [x] API Gateway (FastAPI + WebSocket) `:8000`
-- [x] Ingestion Service (Kafka → Iceberg)
+- [x] API Gateway (Express + WebSocket) `:8000`
+- [x] User Service (auth, users) `:8006`
 - [x] Portfolio Service `:8001`
 - [x] Order Service `:8002`
 - [x] Transaction Service `:8003`
-- [x] Analytics Service `:8004`
-- [x] ML Service `:8005`
-- [x] User Service `:8006`
+- [x] Analytics Service (OHLCV, indicators) `:8004`
+- [x] ML Service (predictions) `:8005`
+- [x] Market Data Service (NestJS + Binance WebSocket) `:3001`
+
+### Data Pipeline
+- [x] Kafka Producer (Binance WebSocket → Kafka)
+- [x] **Kafka Consumer** (2.45M+ messages processed)
+  - [x] Writes to PostgreSQL ohlcv_1m (real-time candles)
+  - [x] Writes to Iceberg (MinIO S3, long-term storage)
+  - [x] Updates Redis (live prices)
+- [x] PostgreSQL OHLCV tables (1m, 5m, 15m, 1h materialized views)
+- [x] 59 real-time candles generated in last hour
 
 ### Database
-- [x] PostgreSQL schema (users, portfolios, holdings, orders, transactions)
-- [x] Indexes for performance
-- [x] Foreign keys and constraints
+- [x] PostgreSQL schema (29 tables)
+- [x] Users, portfolios, holdings, orders, transactions
+- [x] OHLCV data (ohlcv_1m, 5m, 15m, 1h)
+- [x] Indexes and foreign keys
+- [x] Iceberg catalog metadata
+
+### Frontend
+- [x] Next.js 16 Frontend `:3000`
+- [x] BTC Trading Dashboard with candlestick charts
+- [x] Real-time WebSocket integration
+
+### Security & Quality (FIXED Dec 11, 2025)
+- [x] **Bcrypt password hashing** (was CRITICAL vulnerability)
+- [x] Health endpoints for all services
+- [x] CORS configured
 
 ### Documentation
-- [x] README.md (overview)
-- [x] MICROSERVICES.md (quick start)
-- [x] ARCHITECTURE.md (detailed diagrams)
-- [x] platform/back/README.md (technical docs)
-- [x] test-api.sh (API testing script)
+- [x] README.md (project overview)
+- [x] **Architecture diagram** (PlantUML + PNG)
+- [x] Docker setup
+- [x] Environment configuration
 
 ---
 
-## 🎯 TODO (Распределение по участникам)
+## 🔴 CRITICAL ISSUES (MUST FIX IMMEDIATELY)
 
-### Nick (Core ETL Pipeline & Infrastructure)
-- [ ] **Ingestion Service improvements**
-  - [ ] Publish real-time prices to Redis
-  - [ ] Add metrics endpoint
-  - [ ] Error handling improvements
-  
-- [ ] **Silver Layer (OHLCV aggregations)**
-  - [ ] Spark Structured Streaming job
-  - [ ] OHLCV 1m, 5m, 15m, 1h, 4h, 1d
-  - [ ] Write to Iceberg Silver layer
-  
-- [ ] **Gold Layer (Business metrics)**
-  - [ ] Portfolio snapshots
-  - [ ] Daily PnL calculations
-  
-- [ ] **Monitoring**
-  - [ ] Prometheus metrics
-  - [ ] Grafana dashboards
-  - [ ] Alerting rules
+### 1. ~~Passwords in Plain Text~~ ✅ FIXED (Dec 11, 2025)
+- ✅ Bcrypt implemented with salt rounds: 12
+- ✅ All new users use hashed passwords
+- ⚠️ **Old users with plain text passwords cannot login** (need migration or deletion)
 
-### Dan (Backend Services & Database)
-- [ ] **Portfolio Service enhancements**
-  - [ ] Real-time PnL calculations
-  - [ ] Multiple asset support (ETH, SOL, etc.)
-  - [ ] Portfolio performance metrics
-  
-- [ ] **Order Service improvements**
-  - [ ] Limit order matching engine
-  - [ ] Stop-loss / take-profit orders
-  - [ ] Order book management
-  
-- [ ] **Transaction Service**
-  - [ ] Export to CSV/Excel
-  - [ ] Tax reporting
-  - [ ] Advanced filtering
-  
-- [ ] **Database optimization**
-  - [ ] Query performance tuning
-  - [ ] Connection pooling
-  - [ ] Partitioning strategies
+### 2. Missing package-lock.json 🔴 URGENT
+- [ ] **0/7 microservices** have package-lock.json
+- [ ] Generate lock files for reproducible builds
+- **Risk**: Unstable dependency versions, "works on my machine" issues
+- **Effort**: 10 minutes
 
-### Damian (Frontend & API Gateway)
-- [ ] **API Gateway enhancements**
-  - [ ] Authentication (JWT tokens)
-  - [ ] Rate limiting
-  - [ ] API versioning
-  - [ ] Request logging
-  
-- [ ] **WebSocket improvements**
-  - [ ] Room-based subscriptions
-  - [ ] Heartbeat mechanism
-  - [ ] Reconnection logic
-  
-- [ ] **Frontend Dashboard (React/Vue)**
-  - [ ] User authentication UI
-  - [ ] Real-time price charts (Chart.js/Recharts)
-  - [ ] Trading interface (buy/sell)
-  - [ ] Portfolio overview
-  - [ ] Order history table
-  - [ ] Transaction history
-  - [ ] Technical indicators visualization
-  
-- [ ] **WebSocket Client**
-  - [ ] Subscribe to price updates
-  - [ ] Order status notifications
-  - [ ] Portfolio updates
-
-### Valentina (Analytics & ML)
-- [ ] **Analytics Service improvements**
-  - [ ] Connect to Iceberg Silver layer (real OHLCV data)
-  - [ ] More indicators (Bollinger Bands, Stochastic, ATR)
-  - [ ] Custom indicator builder
-  - [ ] Alert system (price crosses SMA, RSI overbought/oversold)
-  
-- [ ] **ML Service enhancements**
-  - [ ] Real ML model (LSTM/Transformer for price prediction)
-  - [ ] Model training pipeline
-  - [ ] Model versioning
-  - [ ] A/B testing different models
-  
-- [ ] **Backtesting improvements**
-  - [ ] More strategies (mean reversion, momentum, pairs trading)
-  - [ ] Risk management (position sizing, stop-loss)
-  - [ ] Advanced metrics (Sortino ratio, Calmar ratio)
-  - [ ] Monte Carlo simulations
-  
-- [ ] **ML Features**
-  - [ ] Sentiment analysis (Twitter, news)
-  - [ ] Anomaly detection
-  - [ ] Portfolio optimization
+### 3. CORS Open to All 🔴 SECURITY
+- [ ] Current: `origin: '*'` (any site can call API)
+- [ ] Change to: `origin: process.env.FRONTEND_URL`
+- **Risk**: XSS attacks, CSRF, unauthorized access
+- **Effort**: 5 minutes
 
 ---
 
-## 🚀 SHARED TASKS (All Team)
+## ⚠️ HIGH PRIORITY ISSUES
+
+### 4. No Security Middleware 🟡
+- [ ] Add **Helmet** (security headers)
+- [ ] Add **Rate Limiting** (DDoS/brute-force protection)
+- [ ] Add **Input Validation** (joi/zod)
+- [ ] Add **JWT Authentication** middleware
+- **Effort**: 1-2 hours
+
+### 5. No Docker Healthchecks 🟡
+- [ ] Add healthcheck for 8 Node.js services in docker-compose.yml
+- ✅ Already have: PostgreSQL, Redis, Kafka, MinIO
+- **Risk**: Docker doesn't know if service is healthy
+- **Effort**: 30 minutes
+
+### 6. Poor Logging 🟡
+- [ ] Replace `console.log` with **Winston** or **Pino**
+- [ ] Add structured logging (JSON format)
+- [ ] Add log levels (info, warn, error)
+- [ ] Centralized logging (optional: ELK stack)
+- **Effort**: 2 hours
+
+### 7. Cleanup Unused Files 🟡
+- [ ] Delete `.venv` directory (428MB - unused Python venv)
+- [ ] Delete `node_modules` in root (7.7MB - test dependencies)
+- **Total cleanup**: 436MB
+- **Effort**: 2 minutes
+
+---
+
+## 🎯 FEATURE IMPROVEMENTS
+
+### Analytics Service
+- [ ] Connect to Iceberg Silver layer (currently uses PostgreSQL only)
+- [ ] More indicators: Bollinger Bands, Stochastic, ATR
+- [ ] Custom indicator builder
+- [ ] Alert system (price crosses SMA, RSI overbought/oversold)
+
+### ML Service
+- [ ] Real ML model (LSTM/Transformer for price prediction)
+- [ ] Model training pipeline
+- [ ] Model versioning
+- [ ] Feature engineering (volume, momentum, sentiment)
+
+### API Gateway
+- [ ] JWT authentication
+- [ ] Rate limiting (express-rate-limit)
+- [ ] API versioning (/v1, /v2)
+- [ ] Request logging with correlation IDs
+- [ ] Redis caching for OHLCV queries
+
+### Frontend
+- [ ] User authentication UI (login/register)
+- [ ] Real-time price updates (WebSocket)
+- [ ] Trading interface (buy/sell orders)
+- [ ] Portfolio overview with PnL
+- [ ] Order history table
+- [ ] Technical indicators visualization
+
+### Order Service
+- [ ] Limit order matching engine
+- [ ] Stop-loss / take-profit orders
+- [ ] Order book management
+- [ ] Real-time order status updates (WebSocket)
+
+### Portfolio Service
+- [ ] Real-time PnL calculations
+- [ ] Multiple asset support (ETH, SOL, etc.)
+- [ ] Portfolio performance metrics (Sharpe ratio, max drawdown)
+- [ ] Historical snapshots
+
+---
+
+## 🧪 TESTING & QUALITY
 
 ### Testing
-- [ ] Unit tests for each microservice
+- [ ] Unit tests for each microservice (currently: 7 test files)
 - [ ] Integration tests
 - [ ] Load testing (Locust/JMeter)
-- [ ] End-to-end tests
+- [ ] E2E tests
+- **Current coverage**: Minimal
 
-### DevOps
-- [ ] CI/CD pipeline (GitHub Actions)
-- [ ] Docker image optimization
-- [ ] Kubernetes deployment (optional)
-- [ ] Secrets management
+### CI/CD
+- [ ] GitHub Actions workflow
+- [ ] Automated testing on PR
+- [ ] Docker image building
+- [ ] Deployment automation
+- **Current**: None
 
-### Documentation
-- [ ] API documentation (Swagger enhancements)
+---
+
+## 📊 MONITORING & OBSERVABILITY
+
+### Monitoring
+- [ ] Prometheus metrics
+- [ ] Grafana dashboards
+- [ ] Alert manager
+- ✅ Kafka UI (already running on :8090)
+
+### Metrics to Track
+- [ ] Kafka consumer lag
+- [ ] API response times
+- [ ] Database query performance
+- [ ] Error rates
+- [ ] WebSocket connections
+
+---
+
+## 📝 DOCUMENTATION IMPROVEMENTS
+
+### Missing Documentation
+- [ ] API documentation (Swagger/OpenAPI)
 - [ ] Deployment guide
 - [ ] User manual
-- [ ] Architecture decision records (ADRs)
+- [ ] Architecture Decision Records (ADRs)
+- [ ] Contributing guide
+- [x] ~~README with Spark~~ (Updated - Spark removed)
 
-### Security
-- [ ] Input validation
-- [ ] SQL injection prevention
-- [ ] XSS protection
-- [ ] HTTPS/TLS
-
----
-
-## 📅 TIMELINE (MVP - 3 weeks)
-
-### Week 1 (Backend Foundation)
-- **Dan**: Portfolio, Order, Transaction services improvements
-- **Nick**: Silver layer OHLCV + Redis integration
-- **Damian**: API Gateway auth + WebSocket enhancements
-- **Valentina**: Connect Analytics to real data + basic ML model
-
-### Week 2 (Frontend)
-- **Damian**: React dashboard (charts, trading UI, portfolio view)
-- **Dan**: API optimizations + database tuning
-- **Nick**: Monitoring setup (Prometheus/Grafana)
-- **Valentina**: Advanced indicators + backtesting UI
-
-### Week 3 (Integration & Polish)
-- **All**: Integration testing
-- **All**: Bug fixes
-- **All**: Documentation
-- **All**: Performance optimization
-- **Damian**: UI/UX improvements
+### Updates Needed
+- [ ] Update README.md (remove Spark mention)
+- [ ] Add bcrypt security info
+- [ ] Document real-time data pipeline
 
 ---
 
-## 🎁 BONUS FEATURES (Time Permitting)
+## 🎁 BONUS FEATURES (If Time Permits)
 
-- [ ] Multi-exchange support (Binance, Kraken)
-- [ ] Telegram bot for notifications
+- [ ] Multi-exchange support (Binance, Kraken, Coinbase)
+- [ ] Telegram bot for price alerts
 - [ ] Mobile app (React Native)
 - [ ] Social trading (copy other users)
 - [ ] Leaderboard
 - [ ] Paper trading competitions
-- [ ] Educational content (tutorials, glossary)
+- [ ] Educational content (tutorials, trading strategies)
 
 ---
 
-## 📝 NOTES
+## 📅 RECOMMENDED TIMELINE
 
-**Current Status**: Microservices architecture complete, ready for development
+### Phase 1: Critical Security (This Week) 🔴
+**Time: 2 hours**
+1. ✅ ~~Bcrypt password hashing~~ (DONE)
+2. Generate package-lock.json (10 min)
+3. Fix CORS to specific origin (5 min)
+4. Add Helmet + Rate Limiting (30 min)
+5. Docker healthchecks (30 min)
+6. Delete .venv and node_modules (2 min)
 
-**Next Meeting**: Discuss task distribution and timeline
+### Phase 2: Quality & Stability (Week 2) 🟡
+**Time: 4-6 hours**
+1. Winston/Pino logging (2h)
+2. Input validation (1h)
+3. JWT authentication (2h)
+4. Unit tests (1-2h)
 
-**Blockers**: None (все зависимости готовы)
+### Phase 3: Features (Week 3-4) 🟢
+**Time: 8-12 hours**
+1. Frontend improvements (4h)
+2. Advanced indicators (2h)
+3. Order matching engine (3h)
+4. ML model training (3h)
 
-**Demo Credentials**:
-- Username: `demo_user`
-- Email: `demo@trading.com`
-- Portfolio ID: `1`
-- Initial Balance: $10,000
+### Phase 4: DevOps & Monitoring (Week 5) 🟢
+**Time: 4-6 hours**
+1. Prometheus + Grafana (2h)
+2. GitHub Actions CI/CD (2h)
+3. Documentation (2h)
+
+---
+
+## 🚨 CURRENT STATUS
+
+**Last Updated**: December 11, 2025
+
+### System Health
+- ✅ **17/17 containers running** (32+ hours uptime)
+- ✅ **Kafka Consumer**: 2.45M+ messages processed, 0 errors
+- ✅ **Real-time data**: 59 candles in last hour
+- ✅ **All health endpoints**: Working
+- ✅ **Security**: Bcrypt implemented
+
+### Critical Issues Remaining
+- 🔴 **package-lock.json**: Missing (0/7 services)
+- 🔴 **CORS**: Open to all (`origin: '*'`)
+- 🟡 **Security middleware**: None (no helmet, no rate limiting)
+- 🟡 **Docker healthchecks**: Missing for Node.js services
+- 🟡 **Logging**: Basic console.log only
+
+### Database Stats
+- Users: 6 (1 old plain text, 5+ with bcrypt)
+- Orders: 4
+- OHLCV data: ~860KB (real-time growing)
+- PostgreSQL: Healthy
+
+---
+
+## 📞 CONTACTS & RESOURCES
+
+**Team Members**:
+- Nick (Core Pipeline & Infrastructure)
+- Dan (Backend Services & Database)
+- Damian (Frontend & API Gateway)
+- Valentina (Analytics & ML)
+
+**Quick Links**:
+- Frontend: http://localhost:3000
+- API Gateway: http://localhost:8000/health
+- Kafka UI: http://localhost:8090
+- PostgreSQL: localhost:5433
+- Redis: localhost:6380
+- MinIO: http://localhost:9010 (admin:admin123)
+
+**Project Repository**: UTM 2025 Trading Platform
+
+---
+
+## 🏁 NEXT STEPS (In Priority Order)
+
+1. ✅ ~~Fix bcrypt password hashing~~ **DONE**
+2. 🔴 Generate package-lock.json for all services (10 min)
+3. 🔴 Fix CORS to specific origin (5 min)
+4. 🟡 Add Helmet + Rate Limiting (30 min)
+5. 🟡 Add Docker healthchecks (30 min)
+6. 🟡 Delete .venv and node_modules (2 min)
+7. 🟡 Implement Winston logging (2 hours)
+8. 🟢 Start Phase 3 features
+
+**Blockers**: None
+
+**Demo Ready**: Frontend + Backend working, need security improvements before production.

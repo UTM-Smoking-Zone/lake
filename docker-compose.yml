@@ -285,63 +285,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Spark Master
-  spark-master:
-    image: apache/spark:3.5.0
-    container_name: spark-master
-    networks: [lakehouse]
-    ports:
-      - "0.0.0.0:8080:8080"
-      - "0.0.0.0:7077:7077"
-    environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-      - PYSPARK_PYTHON=python3
-      - PYSPARK_DRIVER_PYTHON=python3
-      # S3/MinIO Configuration
-      - SPARK_CONF_spark_hadoop_fs_s3a_endpoint=http://minio:9000
-      - SPARK_CONF_spark_hadoop_fs_s3a_access_key=${MINIO_ROOT_USER}
-      - SPARK_CONF_spark_hadoop_fs_s3a_secret_key=${MINIO_ROOT_PASSWORD}
-      - SPARK_CONF_spark_hadoop_fs_s3a_path_style_access=true
-      - SPARK_CONF_spark_hadoop_fs_s3a_impl=org.apache.hadoop.fs.s3a.S3AFileSystem
-      # Iceberg Configuration
-      - SPARK_CONF_spark_sql_extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
-    volumes:
-      - ./config/spark:/opt/bitnami/spark/conf
-      - ./notebooks:/opt/notebooks
-      - ./scripts:/opt/scripts
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-
-  # Spark Worker
-  spark-worker:
-    image: apache/spark:3.5.0
-    container_name: spark-worker
-    networks: [lakehouse]
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=4G
-      - SPARK_WORKER_CORES=2
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-      # S3/MinIO Configuration
-      - SPARK_CONF_spark_hadoop_fs_s3a_endpoint=http://minio:9000
-      - SPARK_CONF_spark_hadoop_fs_s3a_access_key=${MINIO_ROOT_USER}
-      - SPARK_CONF_spark_hadoop_fs_s3a_secret_key=${MINIO_ROOT_PASSWORD}
-      - SPARK_CONF_spark_hadoop_fs_s3a_path_style_access=true
-      - SPARK_CONF_spark_hadoop_fs_s3a_impl=org.apache.hadoop.fs.s3a.S3AFileSystem
-    depends_on:
-      - spark-master
-
   # MinIO Client для создания buckets
   minio-setup:
     image: minio/mc:latest

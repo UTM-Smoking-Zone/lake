@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
 
 const app = express();
 app.use(cors());
@@ -46,8 +47,8 @@ app.post('/users', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // TODO: Add bcrypt password hashing
-    const password_hash = password; // TEMPORARY - should hash with bcrypt
+    // Hash password with bcrypt (salt rounds: 12)
+    const password_hash = await bcrypt.hash(password, 12);
 
     const result = await pool.query(
       'INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, display_name, is_active, created_at',
@@ -82,8 +83,10 @@ app.post('/users/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // TODO: Add bcrypt password comparison
-    if (user.password_hash !== password) { // TEMPORARY - should use bcrypt.compare
+    // Verify password with bcrypt
+    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+
+    if (!passwordMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
