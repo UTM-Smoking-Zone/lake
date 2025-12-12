@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 // import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import CryptoPortfolioCard from '@/components/CryptoPortfolioCard';
-import MarketTrendTable from '@/components/MarketTrendTable';
 import FavoritesSection from '@/components/FavoritesSection';
 
 // Interface definitions
@@ -17,17 +16,6 @@ interface PortfolioCardData {
   changePercent: number;
   changeColor: 'green' | 'red';
   miniChartData: number[];
-}
-
-interface MarketTrendData {
-  name: string;
-  symbol: string;
-  icon: string;
-  price: string;
-  balance: number;
-  value: string;
-  changePercent: number;
-  changeColor: 'green' | 'red';
 }
 
 interface FavoriteData {
@@ -44,7 +32,6 @@ export default function DashboardPage() {
   // const router = useRouter();
   const [BtcCandles, setBtcCandles] = useState<any>(null);
   const [portfolioCards, setPortfolioCards] = useState<PortfolioCardData[]>([]);
-  const [marketTrendData, setMarketTrendData] = useState<MarketTrendData[]>([]);
   const [favoritesData, setFavoritesData] = useState<FavoriteData[]>([]);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [fetchCounter, setFetchCounter] = useState<number>(0);
@@ -117,26 +104,6 @@ export default function DashboardPage() {
         };
       });
 
-      const updatedMarketData = cryptoConfig.map((config) => {
-        const binanceSymbol = cryptoMapping[config.symbol as keyof typeof cryptoMapping];
-        const coinData = data[binanceSymbol];
-        
-        // Use real Binance data
-        const price = coinData ? parseFloat(coinData.lastPrice) : 0;
-        const change = coinData ? parseFloat(coinData.priceChangePercent) : 0;
-        
-        return {
-          name: config.name,
-          symbol: config.symbol,
-          icon: config.icon,
-          price: `$${price.toFixed(price < 1 ? 4 : 2)}`,
-          balance: 201.01,
-          value: `$${(price * 201.01).toFixed(2)}`,
-          changePercent: parseFloat(Math.abs(change).toFixed(2)),
-          changeColor: change >= 0 ? 'green' as const : 'red' as const
-        };
-      });
-
       const updatedFavorites = cryptoConfig.slice(0, 5).map((config) => {
         const binanceSymbol = cryptoMapping[config.symbol as keyof typeof cryptoMapping];
         const coinData = data[binanceSymbol];
@@ -156,11 +123,9 @@ export default function DashboardPage() {
       });
 
       console.log('✅ Setting portfolio cards:', updatedPortfolioCards.length, 'items');
-      console.log('✅ Setting market data:', updatedMarketData.length, 'items');
       console.log('✅ Setting favorites:', updatedFavorites.length, 'items');
       
       setPortfolioCards(updatedPortfolioCards);
-      setMarketTrendData(updatedMarketData);
       setFavoritesData(updatedFavorites);
       setLastUpdate(new Date());
       
@@ -296,13 +261,6 @@ export default function DashboardPage() {
               />
             </div>
           </div>
-
-          {/* Market Trend Table */}
-          <MarketTrendTable
-            title="Market Trend"
-            data={marketTrendData}
-            showActionButton={true}
-          />
         </main>
       </div>
     </div>
