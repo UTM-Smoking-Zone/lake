@@ -4,15 +4,41 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const { createClient } = require('redis');
 const axios = require('axios');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const httpServer = createServer(app);
+
+// CORS configuration - restrict to frontend only
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:3000', 'http://localhost:8000'];
+
 const io = new Server(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
+  cors: {
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
 });
 
-app.use(cors());
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
 app.use(express.json());
+
+// Rate limiting - protect against DDoS and brute force attacks
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  message: 'Too many requests from this IP, please try again later.'
+});
+
+// Apply rate limiting to all API routes
+app.use('/api/', limiter);
 
 const PORT = process.env.PORT || 8000;
 const REDIS_HOST = process.env.REDIS_HOST || 'redis';

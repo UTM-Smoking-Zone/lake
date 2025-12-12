@@ -9,12 +9,17 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8006;
 
+// Validate required environment variables
+if (!process.env.POSTGRES_PASSWORD) {
+  throw new Error('POSTGRES_PASSWORD environment variable is required');
+}
+
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'postgres',
   port: process.env.POSTGRES_PORT || 5432,
   database: process.env.POSTGRES_DB || 'lakehouse',
   user: process.env.POSTGRES_USER || 'admin',
-  password: process.env.POSTGRES_PASSWORD || 'admin123'
+  password: process.env.POSTGRES_PASSWORD
 });
 
 app.get('/health', (req, res) => {

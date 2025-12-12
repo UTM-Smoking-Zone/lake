@@ -17,7 +17,7 @@ class KafkaConfig:
             'auto.commit.interval.ms': self.auto_commit_interval_ms
         }
 
-@dataclass  
+@dataclass
 class IcebergConfig:
     catalog_uri: str = "postgresql://admin:admin123@postgres:5432/lakehouse"
     warehouse: str = "s3://warehouse/"
@@ -27,6 +27,7 @@ class IcebergConfig:
 
 @dataclass
 class BatchConfig:
-    batch_size: int = 5000
-    batch_timeout: int = 600
+    # Optimized for real-time processing with micro-batching
+    batch_size: int = 100  # Reduced from 5000 for lower latency
+    batch_timeout: int = 5  # Reduced from 600s (10 min) to 5s for real-time
     max_retries: int = 3
