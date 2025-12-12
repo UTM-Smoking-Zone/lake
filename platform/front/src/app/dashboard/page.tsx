@@ -13,8 +13,7 @@ interface PortfolioCardData {
   name: string;
   symbol: string;
   icon: string;
-  totalShares: number;
-  totalReturn: string;
+  currentPrice: string;
   changePercent: number;
   changeColor: 'green' | 'red';
   miniChartData: number[];
@@ -50,18 +49,18 @@ export default function DashboardPage() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [fetchCounter, setFetchCounter] = useState<number>(0);
 
-  // Mapping of crypto symbols to CoinGecko IDs
+  // Mapping of crypto symbols to Binance trading pairs
   const cryptoMapping = {
-    BTC: 'bitcoin',
-    ETH: 'ethereum', 
-    BNB: 'binancecoin',
-    XRP: 'ripple',
-    SOL: 'solana',
-    ADA: 'cardano',
-    DOGE: 'dogecoin',
-    TRX: 'tron',
-    MATIC: 'matic-network',
-    AVAX: 'avalanche-2'
+    BTC: 'BTCUSDT',
+    ETH: 'ETHUSDT', 
+    BNB: 'BNBUSDT',
+    XRP: 'XRPUSDT',
+    SOL: 'SOLUSDT',
+    ADA: 'ADAUSDT',
+    DOGE: 'DOGEUSDT',
+    TRX: 'TRXUSDT',
+    MATIC: 'MATICUSDT',
+    AVAX: 'AVAXUSDT'
   };
 
   const cryptoConfig = [
@@ -80,36 +79,38 @@ export default function DashboardPage() {
   const fetchCryptoData = async () => {
     setFetchCounter(prev => prev + 1);
     try {
-      console.log('Fetching crypto data...');
-      const ids = Object.values(cryptoMapping).join(',');
+      console.log('Fetching crypto data from Binance...');
+      const symbols = Object.values(cryptoMapping);
       const response = await fetch(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
+        `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`
       );
       
       if (!response.ok) {
-        console.error('API response not ok:', response.status);
+        console.error('Binance API response not ok:', response.status);
         return;
       }
       
-      const data = await response.json();
-      console.log('Fetched crypto data:', data);
+      const dataArray = await response.json();
+      // Convert array to object for easier access
+      const data = dataArray.reduce((acc: any, item: any) => {
+        acc[item.symbol] = item;
+        return acc;
+      }, {});
+      console.log('Fetched crypto data from Binance:', data);
 
       const updatedPortfolioCards = cryptoConfig.map((config) => {
-        const coinId = cryptoMapping[config.symbol as keyof typeof cryptoMapping];
-        const coinData = data[coinId];
+        const binanceSymbol = cryptoMapping[config.symbol as keyof typeof cryptoMapping];
+        const coinData = data[binanceSymbol];
         
-        // Add some randomness for testing + real API data
-        const basePrice = coinData?.usd || Math.random() * 1000 + 100;
-        const randomVariation = (Math.random() - 0.5) * 0.02; // ±1% variation
-        const price = basePrice * (1 + randomVariation);
-        const change = coinData?.usd_24h_change || (Math.random() - 0.5) * 10;
+        // Use real Binance data
+        const price = coinData ? parseFloat(coinData.lastPrice) : 0;
+        const change = coinData ? parseFloat(coinData.priceChangePercent) : 0;
         
         return {
           name: config.name,
           symbol: config.symbol,
           icon: config.icon,
-          totalShares: 201.01,
-          totalReturn: `$${price.toFixed(2)}`,
+          currentPrice: `$${price.toFixed(price < 1 ? 4 : 2)}`,
           changePercent: parseFloat(Math.abs(change).toFixed(2)),
           changeColor: change >= 0 ? 'green' as const : 'red' as const,
           miniChartData: [100, 120, 110, 140, 130, 150, 145] // Static for now
@@ -117,20 +118,18 @@ export default function DashboardPage() {
       });
 
       const updatedMarketData = cryptoConfig.map((config) => {
-        const coinId = cryptoMapping[config.symbol as keyof typeof cryptoMapping];
-        const coinData = data[coinId];
+        const binanceSymbol = cryptoMapping[config.symbol as keyof typeof cryptoMapping];
+        const coinData = data[binanceSymbol];
         
-        // Add some randomness for testing + real API data
-        const basePrice = coinData?.usd || Math.random() * 1000 + 100;
-        const randomVariation = (Math.random() - 0.5) * 0.02; // ±1% variation  
-        const price = basePrice * (1 + randomVariation);
-        const change = coinData?.usd_24h_change || (Math.random() - 0.5) * 10;
+        // Use real Binance data
+        const price = coinData ? parseFloat(coinData.lastPrice) : 0;
+        const change = coinData ? parseFloat(coinData.priceChangePercent) : 0;
         
         return {
           name: config.name,
           symbol: config.symbol,
           icon: config.icon,
-          price: `$${price.toFixed(2)}`,
+          price: `$${price.toFixed(price < 1 ? 4 : 2)}`,
           balance: 201.01,
           value: `$${(price * 201.01).toFixed(2)}`,
           changePercent: parseFloat(Math.abs(change).toFixed(2)),
@@ -139,20 +138,18 @@ export default function DashboardPage() {
       });
 
       const updatedFavorites = cryptoConfig.slice(0, 5).map((config) => {
-        const coinId = cryptoMapping[config.symbol as keyof typeof cryptoMapping];
-        const coinData = data[coinId];
+        const binanceSymbol = cryptoMapping[config.symbol as keyof typeof cryptoMapping];
+        const coinData = data[binanceSymbol];
         
-        // Add some randomness for testing + real API data
-        const basePrice = coinData?.usd || Math.random() * 1000 + 100;
-        const randomVariation = (Math.random() - 0.5) * 0.02; // ±1% variation
-        const price = basePrice * (1 + randomVariation);
-        const change = coinData?.usd_24h_change || (Math.random() - 0.5) * 10;
+        // Use real Binance data
+        const price = coinData ? parseFloat(coinData.lastPrice) : 0;
+        const change = coinData ? parseFloat(coinData.priceChangePercent) : 0;
         
         return {
           name: config.name,
           symbol: config.symbol,
           icon: config.icon,
-          price: `$${price.toFixed(2)}`,
+          price: `$${price.toFixed(price < 1 ? 4 : 2)}`,
           changePercent: parseFloat(Math.abs(change).toFixed(2)),
           changeColor: change >= 0 ? 'green' as const : 'red' as const
         };
@@ -242,8 +239,7 @@ export default function DashboardPage() {
                   name={card.name}
                   symbol={card.symbol}
                   icon={card.icon}
-                  totalShares={card.totalShares}
-                  totalReturn={card.totalReturn}
+                  currentPrice={card.currentPrice}
                   changePercent={card.changePercent}
                   changeColor={card.changeColor}
                   miniChartData={card.miniChartData}
@@ -257,8 +253,7 @@ export default function DashboardPage() {
                   name={card.name}
                   symbol={card.symbol}
                   icon={card.icon}
-                  totalShares={card.totalShares}
-                  totalReturn={card.totalReturn}
+                  currentPrice={card.currentPrice}
                   changePercent={card.changePercent}
                   changeColor={card.changeColor}
                   miniChartData={card.miniChartData}
