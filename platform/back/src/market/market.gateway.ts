@@ -13,30 +13,51 @@ const WS = require('ws');
 export class MarketGateway implements OnModuleInit {
   @WebSocketServer() server!: Server;
 
-  private binanceWs?: any;
+  private binanceConnections: Map<string, any> = new Map();
   private wsUrl = process.env.BINANCE_WS || 'wss://stream.binance.com:9443/ws';
-  private symbol = (process.env.DEFAULT_SYMBOL || 'BTCUSDT').toLowerCase();
   private interval = process.env.DEFAULT_INTERVAL || '1m';
+  
+  // Multiple symbols to track
+  private symbols = [
+    'BTCUSDT',
+    'ETHUSDT', 
+    'BNBUSDT',
+    'XRPUSDT',
+    'SOLUSDT',
+    'ADAUSDT',
+    'DOGEUSDT',
+    'TRXUSDT',
+    'MATICUSDT',
+    'AVAXUSDT'
+  ];
 
   onModuleInit() {
-    this.connect();
+    this.connectToAll();
   }
 
-  private connect() {
-    const stream = `${this.symbol}@kline_${this.interval}`;
-    const url = `${this.wsUrl}/${stream}`;
-    this.binanceWs = new WS(url);
+  private connectToAll() {
+    // Connect to each symbol separately for better reliability
+    this.symbols.forEach(symbol => {
+      this.connectToSymbol(symbol);
+    });
+  }
 
-    this.binanceWs.on('open', () => {
-      // eslint-disable-next-line no-console
-      console.log('Connected to Binance stream:', stream);
+  private connectToSymbol(symbol: string) {
+    const stream = `${symbol.toLowerCase()}@kline_${this.interval}`;
+    const url = `${this.wsUrl}/${stream}`;
+    
+    const ws = new WS(url);
+    
+    ws.on('open', () => {
+      console.log(`✅ Connected to Binance stream for ${symbol}`);
     });
 
-    this.binanceWs.on('message', (raw: Buffer) => {
+    ws.on('message', (raw: Buffer) => {
       try {
         const payload = JSON.parse(raw.toString());
         const k = payload.k; // kline object
         if (!k) return;
+        
         this.server.emit('kline', {
           time: Math.floor(k.t / 1000),
           open: +k.o,
@@ -47,20 +68,25 @@ export class MarketGateway implements OnModuleInit {
           interval: k.i,
           symbol: k.s
         });
-      } catch (_) {}
+      } catch (error) {
+        console.error(`Error parsing WebSocket message for ${symbol}:`, error);
+      }
     });
 
-    this.binanceWs.on('close', () => {
-      // eslint-disable-next-line no-console
-      console.log('Binance WS closed. Reconnecting in 3s...');
-      setTimeout(() => this.connect(), 3000);
+    ws.on('close', () => {
+      console.log(`❌ Binance WS closed for ${symbol}. Reconnecting in 3s...`);
+      setTimeout(() => this.connectToSymbol(symbol), 3000);
     });
 
-    this.binanceWs.on('error', () => {
-      // eslint-disable-next-line no-console
-      console.log('Binance WS error. Reconnecting in 3s...');
-      try { this.binanceWs.close(); } catch {}
-      setTimeout(() => this.connect(), 3000);
+    ws.on('error', (error: any) => {
+      console.log(`❌ Binance WS error for ${symbol}:`, error.message, 'Reconnecting in 3s...');
+      try { 
+        this.binanceConnections.delete(symbol);
+        ws.close(); 
+      } catch {}
+      setTimeout(() => this.connectToSymbol(symbol), 3000);
     });
+
+    this.binanceConnections.set(symbol, ws);
   }
 }
