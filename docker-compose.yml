@@ -69,24 +69,32 @@ services:
     container_name: kafka-consumer
     networks: [lakehouse]
     depends_on:
-      - kafka
-      - minio
+      kafka:
+        condition: service_healthy
+      postgres-analytics:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     restart: on-failure:3
     command: python3 -u consumer.py
     environment:
+      - POSTGRES_HOST=postgres-analytics
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=analytics_service
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-      - PYTHONUNBUFFERED=1 
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONUNBUFFERED=1
     deploy:
       resources:
         limits:
           memory: 2G
         reservations:
           memory: 1G
-    logging:                         # ← ДОБАВИТЬ СЕКЦИЮ
+    logging:
       driver: "json-file"
       options:
         max-size: "10m"
@@ -109,7 +117,7 @@ services:
   # MICROSERVICES (Node.js)
   # ============================================
 
-  # API Gateway - Entry point with WebSocket
+  # API Gateway - Entry point with WebSocket (No direct DB access)
   api-gateway:
     build: ./platform/services/api-gateway
     container_name: api-gateway
@@ -119,8 +127,16 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
+      user-service:
+        condition: service_started
+      portfolio-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      transaction-service:
+        condition: service_started
+      analytics-service:
+        condition: service_started
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -130,6 +146,13 @@ services:
       - ANALYTICS_SERVICE_URL=http://analytics-service:8004
       - ML_SERVICE_URL=http://ml-service:8005
       - USER_SERVICE_URL=http://user-service:8006
+      - KAFKA_BROKERS=kafka:9092
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   # Portfolio Service - Portfolio & wallet management
   portfolio-service:
@@ -139,14 +162,23 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      postgres:
+      postgres-portfolio:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres
+      - POSTGRES_HOST=postgres-portfolio
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=portfolio_service
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - KAFKA_BROKERS=kafka:9092
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # Order Service - Order execution
   order-service:
@@ -156,18 +188,27 @@ services:
     ports:
       - "8002:8002"
     depends_on:
-      postgres:
+      postgres-orders:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres
+      - POSTGRES_HOST=postgres-orders
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=order_service
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - KAFKA_BROKERS=kafka:9092
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # Transaction Service - Transaction history
   transaction-service:
@@ -177,14 +218,23 @@ services:
     ports:
       - "8003:8003"
     depends_on:
-      postgres:
+      postgres-transactions:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres
+      - POSTGRES_HOST=postgres-transactions
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=transaction_service
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - KAFKA_BROKERS=kafka:9092
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # Analytics Service - Technical indicators
   analytics-service:
@@ -194,11 +244,24 @@ services:
     ports:
       - "8004:8004"
     depends_on:
+      postgres-analytics:
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
+      - POSTGRES_HOST=postgres-analytics
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=analytics_service
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # ML Service - Predictions & backtesting
   ml-service:
@@ -207,6 +270,12 @@ services:
     networks: [lakehouse]
     ports:
       - "8005:8005"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # User Service - User management
   user-service:
@@ -216,34 +285,26 @@ services:
     ports:
       - "8006:8006"
     depends_on:
-      postgres:
+      postgres-user:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres
+      - POSTGRES_HOST=postgres-user
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=user_service
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - KAFKA_BROKERS=kafka:9092
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
-  # Market Data Service - NestJS backend with Socket.IO for real-time Binance data
-  market-data-service:
-    build: ./platform/back
-    container_name: market-data-service
-    networks: [lakehouse]
-    ports:
-      - "3001:3001"
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    environment:
-      - PORT=3001
-      - BINANCE_WS=wss://stream.binance.com:9443/ws
-      - BINANCE_REST=https://api.binance.com
-      - DEFAULT_SYMBOL=BTCUSDT
-      - DEFAULT_INTERVAL=1m
-      - DEFAULT_LIMIT=500
+  # REMOVED: market-data-service (duplicate of kafka-producer)
+  # Real-time market data is now handled exclusively by kafka-producer → kafka → kafka-consumer → postgres-analytics
 
   # MinIO - S3 Compatible Storage
   minio:
@@ -265,22 +326,106 @@ services:
       timeout: 10s
       retries: 3
 
-  # PostgreSQL - Unified Database
-  postgres:
-    image: postgres:15
-    container_name: postgres
+  # ============================================
+  # MICROSERVICES DATABASES (Database per Service Pattern)
+  # ============================================
+
+  # User Service Database
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: postgres-user
     networks: [lakehouse]
     ports:
-      - "5433:5432"   # Changed to avoid conflict with upgrade_postgres
+      - "5434:5432"
     environment:
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=user_service
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-      - ./platform/db/init.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./data/postgres-user:/var/lib/postgresql/data
+      - ./platform/db/init-user-service.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d user_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Portfolio Service Database
+  postgres-portfolio:
+    image: postgres:15-alpine
+    container_name: postgres-portfolio
+    networks: [lakehouse]
+    ports:
+      - "5435:5432"
+    environment:
+      - POSTGRES_DB=portfolio_service
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres-portfolio:/var/lib/postgresql/data
+      - ./platform/db/init-portfolio-service.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d portfolio_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Order Service Database
+  postgres-orders:
+    image: postgres:15-alpine
+    container_name: postgres-orders
+    networks: [lakehouse]
+    ports:
+      - "5436:5432"
+    environment:
+      - POSTGRES_DB=order_service
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres-orders:/var/lib/postgresql/data
+      - ./platform/db/init-order-service.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d order_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Transaction Service Database
+  postgres-transactions:
+    image: postgres:15-alpine
+    container_name: postgres-transactions
+    networks: [lakehouse]
+    ports:
+      - "5437:5432"
+    environment:
+      - POSTGRES_DB=transaction_service
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres-transactions:/var/lib/postgresql/data
+      - ./platform/db/init-transaction-service.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d transaction_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Analytics Service Database (read-only OHLCV data)
+  postgres-analytics:
+    image: postgres:15-alpine
+    container_name: postgres-analytics
+    networks: [lakehouse]
+    ports:
+      - "5438:5432"
+    environment:
+      - POSTGRES_DB=analytics_service
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres-analytics:/var/lib/postgresql/data
+      - ./platform/db/init-analytics-service.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d analytics_service"]
       interval: 10s
       timeout: 5s
       retries: 5

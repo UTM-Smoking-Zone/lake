@@ -1,0 +1,272 @@
+@startuml Crypto Trading Lakehouse - Detailed Architecture
+
+!define ICONURL https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0
+
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle rectangle
+skinparam monochrome false
+skinparam shadowing false
+
+skinparam rectangle {
+    BackgroundColor<<frontend>> #E3F2FD
+    BackgroundColor<<gateway>> #C8E6C9
+    BackgroundColor<<service>> #FFF9C4
+    BackgroundColor<<storage>> #FFE0B2
+    BackgroundColor<<messaging>> #F8BBD0
+    BackgroundColor<<cache>> #FFCCBC
+    BackgroundColor<<security>> #CE93D8
+    BorderColor Black
+    FontSize 11
+}
+
+skinparam database {
+    BackgroundColor #FFE0B2
+    BorderColor Black
+}
+
+skinparam cloud {
+    BackgroundColor #B3E5FC
+    BorderColor Black
+}
+
+title Crypto Trading Lakehouse Platform - Detailed Architecture\n**University Project | UTM 2025**
+
+' ===========================================
+' EXTERNAL SERVICES
+' ===========================================
+
+cloud "Binance Exchange" as binance {
+    rectangle "WebSocket API\nwss://stream.binance.com" as binance_ws
+}
+
+' ===========================================
+' FRONTEND LAYER
+' ===========================================
+
+package "Frontend Layer" {
+    rectangle "Next.js 16 Frontend\n:3000\n---\n• BTC Trading Dashboard\n• Candlestick Charts\n• WebSocket Real-time\n• Lightweight Charts" <<frontend>> as frontend
+}
+
+' ===========================================
+' API GATEWAY LAYER
+' ===========================================
+
+package "API Gateway Layer" {
+    rectangle "API Gateway\n:8000\n---\n• Express.js\n• WebSocket Server\n• Socket.IO\n• CORS Enabled\n• Health: OK" <<gateway>> as gateway
+}
+
+' ===========================================
+' MICROSERVICES LAYER
+' ===========================================
+
+package "Microservices Layer (Node.js)" {
+
+    rectangle "User Service\n:8006\n---\n• Registration/Login\n• **Bcrypt** Password Hash\n• User Management\n• Health: OK" <<service>> as user_svc
+
+    rectangle "Portfolio Service\n:8001\n---\n• Portfolio Management\n• Balance Tracking\n• Holdings\n• Health: OK" <<service>> as portfolio_svc
+
+    rectangle "Order Service\n:8002\n---\n• Order Execution\n• Buy/Sell Orders\n• Order History\n• Health: OK" <<service>> as order_svc
+
+    rectangle "Transaction Service\n:8003\n---\n• Transaction History\n• Trade Records\n• Filtering\n• Health: OK" <<service>> as transaction_svc
+
+    rectangle "Analytics Service\n:8004\n---\n• Technical Indicators\n• SMA, EMA, RSI, MACD\n• OHLCV Queries\n• Health: OK" <<service>> as analytics_svc
+
+    rectangle "ML Service\n:8005\n---\n• Price Predictions\n• Backtesting\n• Strategy Analysis\n• Health: OK" <<service>> as ml_svc
+}
+
+' ===========================================
+' MARKET DATA SERVICE (NestJS)
+' ===========================================
+
+package "Market Data Service (NestJS)" {
+    rectangle "Market Data Service\n:3001\n---\n• NestJS Framework\n• Binance Integration\n• Real-time Candles\n• WebSocket Gateway\n• Health: OK" <<service>> as market_svc
+}
+
+' ===========================================
+' DATA STREAMING LAYER
+' ===========================================
+
+package "Data Streaming Layer" {
+
+    rectangle "Kafka Producer\n---\n• Connects to Binance WS\n• Publishes Trades\n• Topic: btcusdt-bybit\n• Status: Running" <<messaging>> as kafka_producer
+
+    rectangle "Apache Kafka\n:9093\n---\n• Message Broker\n• Topic: btcusdt-bybit\n• Replication: 1\n• Health: OK" <<messaging>> as kafka
+
+    rectangle "Kafka Consumer\n---\n**3.01M+ messages**\n**0 errors**\n---\n• PyIceberg Writer\n• PostgreSQL Writer\n• Redis Updater\n• OHLCV Aggregator" <<messaging>> as kafka_consumer
+
+    rectangle "Kafka UI\n:8090\n---\n• Web Interface\n• Topic Monitoring\n• Consumer Lag" <<messaging>> as kafka_ui
+
+    rectangle "Zookeeper\n:2181\n---\n• Kafka Coordination\n• Cluster Metadata" <<messaging>> as zookeeper
+}
+
+' ===========================================
+' STORAGE LAYER
+' ===========================================
+
+package "Storage Layer (Database per Service)" {
+
+    database "User Service DB\n:5434\n---\n• users\n• user_events\n---\nHealth: OK" <<storage>> as postgres_user
+
+    database "Portfolio Service DB\n:5435\n---\n• portfolios\n• balances\n• assets\n---\nHealth: OK" <<storage>> as postgres_portfolio
+
+    database "Order Service DB\n:5436\n---\n• orders\n• order_events\n---\nHealth: OK" <<storage>> as postgres_orders
+
+    database "Transaction Service DB\n:5437\n---\n• transactions (partitioned)\n• transaction_events\n---\nHealth: OK" <<storage>> as postgres_transactions
+
+    database "Analytics Service DB\n:5438\n---\n• ohlcv_1m\n• ohlcv_5m, 15m, 1h (MVs)\n---\nHealth: OK" <<storage>> as postgres_analytics
+
+    database "MinIO S3\n:9000 (API)\n:9001 (Console)\n---\n**Data Lake**\n---\n• Buckets:\n  - warehouse/\n  - bronze/\n  - silver/\n  - gold/\n---\n**Iceberg Tables**\n---\n• crypto_trades\n• Parquet Format\n• PyIceberg Writer\n---\nHealth: OK" <<storage>> as minio
+
+    database "Redis 7\n:6380\n---\n**Cache + Real-time**\n---\n• price:BTCUSDT\n• Live Prices\n• Session Storage\n• WebSocket State\n---\n2 keys stored\n---\nHealth: OK" <<cache>> as redis
+}
+
+' ===========================================
+' CONNECTIONS - External
+' ===========================================
+
+binance_ws -down-> kafka_producer : Real-time\nTrade Stream
+
+' ===========================================
+' CONNECTIONS - Frontend to Gateway
+' ===========================================
+
+frontend -down-> gateway : HTTP/HTTPS\nWebSocket
+
+' ===========================================
+' CONNECTIONS - Gateway to Services
+' ===========================================
+
+gateway -down-> user_svc : REST\n/users
+gateway -down-> portfolio_svc : REST\n/portfolio
+gateway -down-> order_svc : REST\n/orders
+gateway -down-> transaction_svc : REST\n/transactions
+gateway -down-> analytics_svc : REST\n/analytics
+gateway -down-> ml_svc : REST\n/ml
+
+user_svc -up-> kafka : Publish\nuser-events
+portfolio_svc -up-> kafka : Publish\nportfolio-events
+order_svc -up-> kafka : Publish\norder-events
+transaction_svc -up-> kafka : Publish\ntransaction-events
+
+' ===========================================
+' CONNECTIONS - Services to Storage
+' ===========================================
+
+user_svc -down-> postgres_user : SQL\nusers table
+portfolio_svc -down-> postgres_portfolio : SQL\nportfolios, balances
+order_svc -down-> postgres_orders : SQL\norders
+transaction_svc -down-> postgres_transactions : SQL\ntransactions
+analytics_svc -down-> postgres_analytics : SQL\nOHLCV Read-Only
+
+' ===========================================
+' CONNECTIONS - Services to Redis
+' ===========================================
+
+gateway -down-> redis : Cache\nWebSocket State
+order_svc -down-> redis : Read Prices\nOrder Execution
+market_svc -down-> redis : Update\nLive Prices
+
+' ===========================================
+' CONNECTIONS - Data Streaming
+' ===========================================
+
+kafka_producer -down-> kafka : Publish\nTrades
+kafka -down-> kafka_consumer : Consume\nMessages
+kafka -left-> zookeeper : Coordination
+kafka_ui -up-> kafka : Monitor
+
+' ===========================================
+' CONNECTIONS - Kafka Consumer Writes
+' ===========================================
+
+kafka_consumer -down-> postgres_analytics : INSERT\nOHLCV 1m\n(Real-time)
+kafka_consumer -down-> minio : Write\nIceberg\n(Parquet)
+kafka_consumer -down-> redis : SET\nLive Prices
+
+' ===========================================
+' DATA FLOW ANNOTATIONS
+' ===========================================
+
+note right of kafka_consumer
+  **Data Pipeline:**
+  1. Aggregate trades → 1m candles
+  2. Write to PostgreSQL (ohlcv_1m)
+  3. Write to Iceberg (MinIO S3)
+  4. Update Redis (live prices)
+
+  **Performance:**
+  • 3.01M+ messages processed
+  • 0 errors
+  • ~30s flush interval
+end note
+
+note right of postgres_analytics
+  **Microservices DBs:**
+  • 5 isolated databases
+  • Database per service pattern
+  • No shared database coupling
+  • Event-driven communication
+  • Independent scaling
+end note
+
+note left of user_svc
+  **Security:**
+  [YES] Bcrypt (salt: 12)
+  [YES] Password hashing
+  [YES] No plain text
+  [NO] No JWT yet
+  [NO] No rate limiting
+end note
+
+note bottom of frontend
+  **Tech Stack:**
+  • Next.js 16
+  • React 19
+  • Lightweight Charts
+  • Socket.IO Client
+  • Tailwind CSS
+end note
+
+' ===========================================
+' LEGEND
+' ===========================================
+
+legend right
+  **Component Types:**
+  <color:#E3F2FD>▮</color> Frontend (Next.js)
+  <color:#C8E6C9>▮</color> API Gateway
+  <color:#FFF9C4>▮</color> Microservice (Node.js)
+  <color:#FFE0B2>▮</color> Storage (PostgreSQL, MinIO)
+  <color:#F8BBD0>▮</color> Messaging (Kafka)
+  <color:#FFCCBC>▮</color> Cache (Redis)
+
+  **Status:**
+  [OK] - Healthy / Implemented
+  [NO] - Not Implemented
+
+  **Key Metrics:**
+  • Containers: 17/17 running
+  • Uptime: 38+ hours
+  • Messages: 3.01M+
+  • Errors: 0
+
+  **Improvements:**
+  [OK] Microservices architecture
+  [OK] Database per service (5 DBs)
+  [OK] Event-driven communication
+  [OK] Removed market-data duplication
+  [OK] Bcrypt passwords
+  [OK] Docker healthchecks
+  [WARN] CORS open (*)
+  [NO] No Helmet/Rate Limiting
+endlegend
+
+' ===========================================
+' FOOTER
+' ===========================================
+
+center footer
+**Crypto Trading Lakehouse Platform**\nUniversity Project | Team: Nick, Dan, Damian, Valentina | UTM 2025\nGenerated: December 11, 2025
+end footer
+
+@enduml

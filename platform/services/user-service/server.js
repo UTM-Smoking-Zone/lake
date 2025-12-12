@@ -10,12 +10,14 @@ app.use(express.json());
 const PORT = process.env.PORT || 8006;
 
 const pool = new Pool({
-  host: process.env.POSTGRES_HOST || 'postgres',
+  host: process.env.POSTGRES_HOST || 'postgres-user',
   port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'lakehouse',
+  database: process.env.POSTGRES_DB || 'user_service',
   user: process.env.POSTGRES_USER || 'admin',
   password: process.env.POSTGRES_PASSWORD || 'admin123'
 });
+
+console.log(`✅ User Service connecting to: ${process.env.POSTGRES_HOST || 'postgres-user'}/${process.env.POSTGRES_DB || 'user_service'}`);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'user-service' });

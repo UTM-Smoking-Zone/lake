@@ -1,20 +1,16 @@
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
+const axios = require('axios');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 8005;
+const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:8004';
 
-const pool = new Pool({
-  host: process.env.POSTGRES_HOST || 'postgres',
-  port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'lakehouse',
-  user: process.env.POSTGRES_USER || 'admin',
-  password: process.env.POSTGRES_PASSWORD || 'admin123'
-});
+console.log(`✅ ML Service starting (stateless - uses Analytics Service API)`);
+console.log(`📊 Analytics Service URL: ${ANALYTICS_SERVICE_URL}`);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'ml-service' });
@@ -22,34 +18,19 @@ app.get('/health', (req, res) => {
 
 app.get('/predict', async (req, res) => {
   try {
-    const { symbol, horizon = 24 } = req.query;
+    const { symbol = 'BTCUSDT', horizon = 24, interval = '1h' } = req.query;
 
-    // Get symbol_id
-    const symbolResult = await pool.query(
-      'SELECT id FROM symbols WHERE symbol = $1',
-      [symbol || 'BTCUSDT']
-    );
+    // Get OHLCV data from analytics-service
+    const response = await axios.get(`${ANALYTICS_SERVICE_URL}/ohlcv/${symbol}`, {
+      params: { interval, limit: 100 }
+    });
 
-    if (symbolResult.rows.length === 0) {
-      return res.status(404).json({ error: `Symbol ${symbol} not found` });
-    }
-
-    const symbolId = symbolResult.rows[0].id;
-
-    // Get latest price from ohlcv_1h
-    const priceResult = await pool.query(`
-      SELECT close, open_ts
-      FROM ohlcv_1h
-      WHERE symbol_id = $1
-      ORDER BY open_ts DESC
-      LIMIT 100
-    `, [symbolId]);
-
-    if (priceResult.rows.length === 0) {
+    if (!response.data || !response.data.data || response.data.data.length === 0) {
       return res.status(404).json({ error: 'No price data available for prediction' });
     }
 
-    const prices = priceResult.rows.reverse().map(row => parseFloat(row.close));
+    const candles = response.data.data;
+    const prices = candles.map(c => parseFloat(c.close));
     const currentPrice = prices[prices.length - 1];
 
     // Simple moving average prediction (placeholder for real ML model)
@@ -57,107 +38,141 @@ app.get('/predict', async (req, res) => {
     const avgPrice = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
     const trend = (currentPrice - avgPrice) / avgPrice;
 
+    // Calculate volatility
+    const returns = [];
+    for (let i = 1; i < recentPrices.length; i++) {
+      returns.push((recentPrices[i] - recentPrices[i - 1]) / recentPrices[i - 1]);
+    }
+    const volatility = Math.sqrt(returns.reduce((sum, r) => sum + r * r, 0) / returns.length);
+
     const prediction = currentPrice * (1 + trend * 0.5);
-    const confidence = Math.max(0.5, Math.min(0.95, 0.75 - Math.abs(trend) * 2));
+    const confidence = Math.max(0.5, Math.min(0.95, 0.75 - Math.abs(trend) * 2 - volatility * 10));
 
     res.json({
-      symbol: symbol || 'BTCUSDT',
+      symbol,
+      interval,
       horizon: parseInt(horizon),
       current_price: currentPrice,
       predicted_price: prediction,
+      prediction_change_pct: ((prediction - currentPrice) / currentPrice * 100).toFixed(2),
       confidence: confidence,
+      model: 'simple_ma_trend',
       timestamp: new Date().toISOString(),
       data_points: prices.length
     });
   } catch (error) {
     console.error('Prediction error:', error);
+    if (error.response) {
+      return res.status(error.response.status).json({ error: error.response.data });
+    }
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/backtest', async (req, res) => {
   try {
-    const { strategy, symbol, start_date, end_date, portfolio_id } = req.body;
+    const { strategy = 'sma_crossover', symbol = 'BTCUSDT', interval = '1h', lookback_days = 30 } = req.body;
 
-    // Get symbol_id
-    const symbolResult = await pool.query(
-      'SELECT id FROM symbols WHERE symbol = $1',
-      [symbol || 'BTCUSDT']
-    );
+    // Get historical data from analytics-service
+    const limit = lookback_days * (interval === '1h' ? 24 : interval === '1m' ? 1440 : 288);
 
-    if (symbolResult.rows.length === 0) {
-      return res.status(400).json({ error: `Symbol ${symbol} not found` });
-    }
+    const response = await axios.get(`${ANALYTICS_SERVICE_URL}/ohlcv/${symbol}`, {
+      params: { interval, limit: Math.min(limit, 1000) }
+    });
 
-    const symbolId = symbolResult.rows[0].id;
-
-    // Get historical trades for backtesting
-    const tradesResult = await pool.query(`
-      SELECT
-        side,
-        price,
-        quantity,
-        notional,
-        fee_amount,
-        trade_ts
-      FROM trades
-      WHERE symbol_id = $1
-        AND ($2::bigint IS NULL OR portfolio_id = $2)
-        AND ($3::timestamp IS NULL OR trade_ts >= $3)
-        AND ($4::timestamp IS NULL OR trade_ts <= $4)
-      ORDER BY trade_ts ASC
-    `, [symbolId, portfolio_id || null, start_date || null, end_date || null]);
-
-    if (tradesResult.rows.length === 0) {
+    if (!response.data || !response.data.data || response.data.data.length === 0) {
       return res.json({
         strategy,
         symbol,
+        interval,
         total_return: 0,
         sharpe_ratio: 0,
         max_drawdown: 0,
         win_rate: 0,
         trades: 0,
-        message: 'No historical trades found for backtesting'
+        message: 'No historical data found for backtesting'
       });
     }
 
-    // Simple backtest calculation
-    let totalPnL = 0;
-    let wins = 0;
+    const candles = response.data.data;
+    const prices = candles.map(c => parseFloat(c.close));
+
+    // Simple SMA crossover strategy backtest
+    const shortPeriod = 10;
+    const longPeriod = 30;
+
     let position = 0;
+    let cash = 10000; // Starting capital
     let entryPrice = 0;
+    let trades = [];
 
-    tradesResult.rows.forEach(trade => {
-      const price = parseFloat(trade.price);
-      const qty = parseFloat(trade.quantity);
-      const fee = parseFloat(trade.fee_amount || 0);
+    for (let i = longPeriod; i < prices.length; i++) {
+      const shortSMA = prices.slice(i - shortPeriod, i).reduce((a, b) => a + b) / shortPeriod;
+      const longSMA = prices.slice(i - longPeriod, i).reduce((a, b) => a + b) / longPeriod;
+      const price = prices[i];
 
-      if (trade.side === 'buy') {
-        entryPrice = position === 0 ? price : (entryPrice * position + price * qty) / (position + qty);
-        position += qty;
-      } else if (trade.side === 'sell' && position > 0) {
-        const pnl = (price - entryPrice) * Math.min(qty, position) - fee;
-        totalPnL += pnl;
-        if (pnl > 0) wins++;
-        position = Math.max(0, position - qty);
+      // Buy signal: short MA crosses above long MA
+      if (shortSMA > longSMA && position === 0) {
+        position = cash / price;
+        entryPrice = price;
+        cash = 0;
+        trades.push({ type: 'buy', price, time: candles[i].open_time });
       }
-    });
+      // Sell signal: short MA crosses below long MA
+      else if (shortSMA < longSMA && position > 0) {
+        cash = position * price;
+        const pnl = (price - entryPrice) * position;
+        trades.push({ type: 'sell', price, time: candles[i].open_time, pnl });
+        position = 0;
+      }
+    }
 
-    const totalTrades = tradesResult.rows.filter(t => t.side === 'sell').length;
-    const winRate = totalTrades > 0 ? wins / totalTrades : 0;
+    // Close any open position
+    if (position > 0) {
+      cash = position * prices[prices.length - 1];
+      position = 0;
+    }
+
+    const totalReturn = ((cash - 10000) / 10000) * 100;
+    const winningTrades = trades.filter(t => t.pnl && t.pnl > 0).length;
+    const totalTrades = trades.filter(t => t.type === 'sell').length;
+    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+
+    // Calculate max drawdown
+    let peak = 10000;
+    let maxDrawdown = 0;
+    let equity = 10000;
+
+    for (const trade of trades) {
+      if (trade.type === 'sell') {
+        equity += trade.pnl;
+        if (equity > peak) peak = equity;
+        const drawdown = ((peak - equity) / peak) * 100;
+        if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+      }
+    }
 
     res.json({
       strategy,
       symbol,
-      total_return: totalPnL,
-      sharpe_ratio: totalTrades > 0 ? (totalPnL / totalTrades) : 0,
-      max_drawdown: -Math.abs(totalPnL * 0.2), // Simplified
-      win_rate: winRate,
+      interval,
+      lookback_days,
+      total_return: totalReturn.toFixed(2),
+      total_return_abs: (cash - 10000).toFixed(2),
+      sharpe_ratio: (totalReturn / Math.max(maxDrawdown, 1)).toFixed(2),
+      max_drawdown: maxDrawdown.toFixed(2),
+      win_rate: winRate.toFixed(2),
       trades: totalTrades,
-      data_points: tradesResult.rows.length
+      winning_trades: winningTrades,
+      losing_trades: totalTrades - winningTrades,
+      data_points: prices.length,
+      final_equity: cash.toFixed(2)
     });
   } catch (error) {
     console.error('Backtest error:', error);
+    if (error.response) {
+      return res.status(error.response.status).json({ error: error.response.data });
+    }
     res.status(500).json({ error: error.message });
   }
 });

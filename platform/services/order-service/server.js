@@ -9,9 +9,9 @@ app.use(express.json());
 const PORT = process.env.PORT || 8002;
 
 const pool = new Pool({
-  host: process.env.POSTGRES_HOST || 'postgres',
+  host: process.env.POSTGRES_HOST || 'postgres-orders',
   port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'lakehouse',
+  database: process.env.POSTGRES_DB || 'order_service',
   user: process.env.POSTGRES_USER || 'admin',
   password: process.env.POSTGRES_PASSWORD || 'admin123'
 });

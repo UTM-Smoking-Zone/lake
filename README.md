@@ -25,11 +25,11 @@ University Project | Team: Nick, Dan, Damian, Valentina | UTM 2025
 - Real-time crypto price ingestion
 
 **Infrastructure:**
-- PostgreSQL (microservices database)
-- Redis (caching + real-time prices)
-- Kafka (message streaming)
-- MinIO (S3 storage)
-- Apache Spark (data processing)
+- PostgreSQL 15 (microservices OLTP + Iceberg catalog)
+- Redis 7 (caching + real-time prices)
+- Kafka + Zookeeper (message streaming)
+- MinIO S3 (Data Lake - Iceberg tables)
+- PyIceberg (data lakehouse format)
 
 ## Quick Start
 

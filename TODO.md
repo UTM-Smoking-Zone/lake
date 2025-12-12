@@ -6,39 +6,53 @@
 
 ## ✅ COMPLETED
 
-### Infrastructure
-- [x] Docker Compose orchestration (17 containers)
+### 🎯 **MICROSERVICES ARCHITECTURE** (Dec 11, 2025)
+- [x] **Database per Service Pattern** - 5 isolated PostgreSQL databases
+  - [x] postgres-user `:5434` (user_service)
+  - [x] postgres-portfolio `:5435` (portfolio_service)
+  - [x] postgres-orders `:5436` (order_service)
+  - [x] postgres-transactions `:5437` (transaction_service)
+  - [x] postgres-analytics `:5438` (analytics_service)
+- [x] **Event-Driven Communication** - Kafka topics for inter-service events
+  - [x] user-events, portfolio-events, order-events, transaction-events
+- [x] **Removed Distributed Monolith** - No more shared database coupling
+- [x] ~~Market Data Service~~ **REMOVED** (duplication eliminated)
+- [x] **Kafka Event Library** - Shared library for event publishing
+
+### Infrastructure (22 containers - was 17)
+- [x] Docker Compose orchestration
 - [x] Apache Kafka + Zookeeper (message streaming)
-- [x] PostgreSQL 15 (OLTP + Iceberg catalog)
+- [x] 5 PostgreSQL 15 databases (Database per Service)
 - [x] Redis 7 (caching + real-time prices)
 - [x] MinIO S3 (Data Lake storage)
 - [x] ~~Apache Spark~~ **REMOVED** (not needed, using PyIceberg)
 
-### Microservices (8 services)
-- [x] API Gateway (Express + WebSocket) `:8000`
-- [x] User Service (auth, users) `:8006`
-- [x] Portfolio Service `:8001`
-- [x] Order Service `:8002`
-- [x] Transaction Service `:8003`
-- [x] Analytics Service (OHLCV, indicators) `:8004`
-- [x] ML Service (predictions) `:8005`
-- [x] Market Data Service (NestJS + Binance WebSocket) `:3001`
+### Microservices (6 services - was 8)
+- [x] API Gateway (Express + WebSocket) `:8000` - No direct DB access
+- [x] User Service (auth, users) `:8006` → postgres-user
+- [x] Portfolio Service `:8001` → postgres-portfolio
+- [x] Order Service `:8002` → postgres-orders
+- [x] Transaction Service `:8003` → postgres-transactions
+- [x] Analytics Service (OHLCV, indicators) `:8004` → postgres-analytics
+- [x] ML Service (predictions) `:8005` - Stateless
 
 ### Data Pipeline
 - [x] Kafka Producer (Binance WebSocket → Kafka)
-- [x] **Kafka Consumer** (2.45M+ messages processed)
-  - [x] Writes to PostgreSQL ohlcv_1m (real-time candles)
+- [x] **Kafka Consumer** (3.01M+ messages processed)
+  - [x] Writes to **postgres-analytics** (was monolithic postgres)
   - [x] Writes to Iceberg (MinIO S3, long-term storage)
   - [x] Updates Redis (live prices)
 - [x] PostgreSQL OHLCV tables (1m, 5m, 15m, 1h materialized views)
-- [x] 59 real-time candles generated in last hour
+- [x] 118 real-time candles in last 2 hours
 
-### Database
-- [x] PostgreSQL schema (29 tables)
-- [x] Users, portfolios, holdings, orders, transactions
-- [x] OHLCV data (ohlcv_1m, 5m, 15m, 1h)
-- [x] Indexes and foreign keys
-- [x] Iceberg catalog metadata
+### Database (Microservices Pattern)
+- [x] **5 isolated databases** - Database per Service
+- [x] User Service DB: users, user_events
+- [x] Portfolio Service DB: portfolios, balances, assets
+- [x] Order Service DB: orders, order_events
+- [x] Transaction Service DB: transactions (partitioned by month)
+- [x] Analytics Service DB: ohlcv_1m + materialized views
+- [x] Removed FK constraints between services
 
 ### Frontend
 - [x] Next.js 16 Frontend `:3000`
@@ -52,7 +66,10 @@
 
 ### Documentation
 - [x] README.md (project overview)
-- [x] **Architecture diagram** (PlantUML + PNG)
+- [x] **Architecture diagram** (PlantUML + PNG) - Updated for microservices
+- [x] **MICROSERVICES_MIGRATION.md** - Full migration guide
+- [x] **MICROSERVICES_SUMMARY.md** - Quick reference
+- [x] **DEPLOY.md** - Step-by-step deployment instructions
 - [x] Docker setup
 - [x] Environment configuration
 

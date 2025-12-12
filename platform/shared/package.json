@@ -1,0 +1,9 @@
+{
+  "name": "@lakehouse/shared",
+  "version": "1.0.0",
+  "description": "Shared libraries for microservices communication",
+  "main": "kafka-events.js",
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  }
+}
