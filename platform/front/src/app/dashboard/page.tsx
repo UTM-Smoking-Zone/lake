@@ -225,9 +225,6 @@ export default function DashboardPage() {
           {/* Header */}
           <div>
             <h1 className="text-2xl font-bold text-white mb-1">My Portfolio</h1>
-            <p className="text-sm text-gray-400">
-              Last updated: {lastUpdate.toLocaleTimeString()} | Auto-refresh: every 3 seconds | Fetch count: {fetchCounter}
-            </p>
           </div>
 
           {/* Portfolio Cards */}
