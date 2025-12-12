@@ -3,8 +3,10 @@ const cors = require('cors');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const { createClient } = require('redis');
-const axios = require('axios');
 const rateLimit = require('express-rate-limit');
+const { authMiddleware, optionalAuth, verifySocketToken } = require('./middleware/auth');
+const { validate, schemas } = require('./middleware/validation');
+const { protectedRequest, getCircuitBreakerHealth } = require('./middleware/circuitBreaker');
 
 const app = express();
 const httpServer = createServer(app);
@@ -63,26 +65,54 @@ const services = {
 
 app.get('/health', async (req, res) => {
   const isRedisConnected = redisClient.isReady;
+  const circuitBreakers = getCircuitBreakerHealth();
+
   res.json({
     status: 'healthy',
     service: 'api-gateway',
     redis: isRedisConnected ? 'connected' : 'disconnected',
-    websocket_clients: io.engine.clientsCount
+    websocket_clients: io.engine.clientsCount,
+    circuit_breakers: circuitBreakers
   });
 });
 
 async function proxyRequest(serviceName, path, method = 'GET', data = null) {
-  const url = `${services[serviceName]}${path}`;
+  const serviceUrl = services[serviceName];
   try {
-    const response = await axios({ method, url, data });
-    return response.data;
+    // Use circuit breaker for resilient service communication
+    const result = await protectedRequest(serviceName, serviceUrl, path, method, data);
+    return result;
   } catch (error) {
-    throw new Error(`Service ${serviceName} error: ${error.message}`);
+    throw error;
   }
 }
 
-app.get('/api/portfolio/:userId', async (req, res) => {
+// Authentication routes - public, no JWT required
+app.post('/api/auth/register', validate(schemas.register), async (req, res) => {
   try {
+    const data = await proxyRequest('user', '/register', 'POST', req.body);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/login', validate(schemas.login), async (req, res) => {
+  try {
+    const data = await proxyRequest('user', '/login', 'POST', req.body);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Protected routes - JWT authentication required
+app.get('/api/portfolio/:userId', authMiddleware, validate(schemas.userId, 'params'), async (req, res) => {
+  try {
+    // Verify user can only access their own portfolio
+    if (req.user.id !== req.params.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const data = await proxyRequest('portfolio', `/portfolio/${req.params.userId}`);
     res.json(data);
   } catch (error) {
@@ -90,17 +120,23 @@ app.get('/api/portfolio/:userId', async (req, res) => {
   }
 });
 
-app.post('/api/orders', async (req, res) => {
+app.post('/api/orders', authMiddleware, validate(schemas.createOrder), async (req, res) => {
   try {
-    const data = await proxyRequest('order', '/orders', 'POST', req.body);
+    // Add user ID to request body for audit trail
+    const orderData = { ...req.body, user_id: req.user.id };
+    const data = await proxyRequest('order', '/orders', 'POST', orderData);
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/transactions/:userId', async (req, res) => {
+app.get('/api/transactions/:userId', authMiddleware, validate(schemas.userId, 'params'), async (req, res) => {
   try {
+    // Verify user can only access their own transactions
+    if (req.user.id !== req.params.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const data = await proxyRequest('transaction', `/transactions/${req.params.userId}`);
     res.json(data);
   } catch (error) {
@@ -108,7 +144,8 @@ app.get('/api/transactions/:userId', async (req, res) => {
   }
 });
 
-app.get('/api/analytics/indicators', async (req, res) => {
+// Analytics routes - optional authentication (public market data)
+app.get('/api/analytics/indicators', optionalAuth, validate(schemas.analyticsQuery, 'query'), async (req, res) => {
   try {
     const { symbol, indicators } = req.query;
     const data = await proxyRequest('analytics', `/indicators?symbol=${symbol}&indicators=${indicators}`);
@@ -118,7 +155,7 @@ app.get('/api/analytics/indicators', async (req, res) => {
   }
 });
 
-app.get('/api/ml/predict', async (req, res) => {
+app.get('/api/ml/predict', optionalAuth, validate(schemas.mlPredictionQuery, 'query'), async (req, res) => {
   try {
     const { symbol, horizon } = req.query;
     const data = await proxyRequest('ml', `/predict?symbol=${symbol}&horizon=${horizon}`);
@@ -128,8 +165,12 @@ app.get('/api/ml/predict', async (req, res) => {
   }
 });
 
-app.get('/api/users/:userId', async (req, res) => {
+app.get('/api/users/:userId', authMiddleware, validate(schemas.userId, 'params'), async (req, res) => {
   try {
+    // Verify user can only access their own profile
+    if (req.user.id !== req.params.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const data = await proxyRequest('user', `/users/${req.params.userId}`);
     res.json(data);
   } catch (error) {
@@ -137,16 +178,43 @@ app.get('/api/users/:userId', async (req, res) => {
   }
 });
 
+// WebSocket authentication middleware
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error('Authentication token required'));
+    }
+
+    const decoded = verifySocketToken(token);
+    socket.userId = decoded.id;
+    socket.userEmail = decoded.email;
+    console.log(`WebSocket authenticated: ${socket.userEmail}`);
+    next();
+  } catch (err) {
+    console.error('WebSocket authentication failed:', err.message);
+    next(new Error('Invalid authentication token'));
+  }
+});
+
 io.on('connection', (socket) => {
-  console.log('WebSocket client connected');
+  console.log(`WebSocket client connected: ${socket.userEmail}`);
 
   socket.on('subscribe', (channel) => {
+    // Validate channel access based on user
+    const allowedChannels = ['prices', `portfolio:${socket.userId}`, `orders:${socket.userId}`];
+
+    if (!allowedChannels.includes(channel)) {
+      socket.emit('error', { message: 'Access denied to channel' });
+      return;
+    }
+
     socket.join(channel);
-    console.log(`Client subscribed to ${channel}`);
+    console.log(`Client ${socket.userEmail} subscribed to ${channel}`);
   });
 
   socket.on('disconnect', () => {
-    console.log('WebSocket client disconnected');
+    console.log(`WebSocket client disconnected: ${socket.userEmail}`);
   });
 });
 
