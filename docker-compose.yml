@@ -69,32 +69,24 @@ services:
     container_name: kafka-consumer
     networks: [lakehouse]
     depends_on:
-      kafka:
-        condition: service_healthy
-      postgres-analytics:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+      - kafka
+      - minio
     restart: on-failure:3
     command: python3 -u consumer.py
     environment:
-      - POSTGRES_HOST=postgres-analytics
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=analytics_service
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - PYTHONUNBUFFERED=1
+      - PYTHONUNBUFFERED=1 
     deploy:
       resources:
         limits:
           memory: 2G
         reservations:
           memory: 1G
-    logging:
+    logging:                         # ← ДОБАВИТЬ СЕКЦИЮ
       driver: "json-file"
       options:
         max-size: "10m"
@@ -117,7 +109,7 @@ services:
   # MICROSERVICES (Node.js)
   # ============================================
 
-  # API Gateway - Entry point with WebSocket (No direct DB access)
+  # API Gateway - Entry point with WebSocket
   api-gateway:
     build: ./platform/services/api-gateway
     container_name: api-gateway
@@ -127,16 +119,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      user-service:
-        condition: service_started
-      portfolio-service:
-        condition: service_started
-      order-service:
-        condition: service_started
-      transaction-service:
-        condition: service_started
-      analytics-service:
-        condition: service_started
+      postgres:
+        condition: service_healthy
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -146,13 +130,6 @@ services:
       - ANALYTICS_SERVICE_URL=http://analytics-service:8004
       - ML_SERVICE_URL=http://ml-service:8005
       - USER_SERVICE_URL=http://user-service:8006
-      - KAFKA_BROKERS=kafka:9092
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
 
   # Portfolio Service - Portfolio & wallet management
   portfolio-service:
@@ -162,23 +139,14 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      postgres-portfolio:
-        condition: service_healthy
-      kafka:
+      postgres:
         condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres-portfolio
+      - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=portfolio_service
+      - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - KAFKA_BROKERS=kafka:9092
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
   # Order Service - Order execution
   order-service:
@@ -188,27 +156,18 @@ services:
     ports:
       - "8002:8002"
     depends_on:
-      postgres-orders:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres-orders
+      - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=order_service
+      - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - KAFKA_BROKERS=kafka:9092
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
   # Transaction Service - Transaction history
   transaction-service:
@@ -218,23 +177,14 @@ services:
     ports:
       - "8003:8003"
     depends_on:
-      postgres-transactions:
-        condition: service_healthy
-      kafka:
+      postgres:
         condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres-transactions
+      - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=transaction_service
+      - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - KAFKA_BROKERS=kafka:9092
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8003/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
   # Analytics Service - Technical indicators
   analytics-service:
@@ -244,24 +194,11 @@ services:
     ports:
       - "8004:8004"
     depends_on:
-      postgres-analytics:
-        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres-analytics
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=analytics_service
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8004/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
   # ML Service - Predictions & backtesting
   ml-service:
@@ -270,12 +207,6 @@ services:
     networks: [lakehouse]
     ports:
       - "8005:8005"
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8005/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
   # User Service - User management
   user-service:
@@ -285,26 +216,34 @@ services:
     ports:
       - "8006:8006"
     depends_on:
-      postgres-user:
-        condition: service_healthy
-      kafka:
+      postgres:
         condition: service_healthy
     environment:
-      - POSTGRES_HOST=postgres-user
+      - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=user_service
+      - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - KAFKA_BROKERS=kafka:9092
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8006/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
-  # REMOVED: market-data-service (duplicate of kafka-producer)
-  # Real-time market data is now handled exclusively by kafka-producer → kafka → kafka-consumer → postgres-analytics
+  # Market Data Service - NestJS backend with Socket.IO for real-time Binance data
+  market-data-service:
+    build: ./platform/back
+    container_name: market-data-service
+    networks: [lakehouse]
+    ports:
+      - "3001:3001"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - PORT=3001
+      - BINANCE_WS=wss://stream.binance.com:9443/ws
+      - BINANCE_REST=https://api.binance.com
+      - DEFAULT_SYMBOL=BTCUSDT
+      - DEFAULT_INTERVAL=1m
+      - DEFAULT_LIMIT=500
 
   # MinIO - S3 Compatible Storage
   minio:
@@ -326,109 +265,82 @@ services:
       timeout: 10s
       retries: 3
 
-  # ============================================
-  # MICROSERVICES DATABASES (Database per Service Pattern)
-  # ============================================
-
-  # User Service Database
-  postgres-user:
-    image: postgres:15-alpine
-    container_name: postgres-user
+  # PostgreSQL - Unified Database
+  postgres:
+    image: postgres:15
+    container_name: postgres
     networks: [lakehouse]
     ports:
-      - "5434:5432"
+      - "5432:5432"   # Changed to avoid conflict with upgrade_postgres
     environment:
-      - POSTGRES_DB=user_service
+      - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
-      - ./data/postgres-user:/var/lib/postgresql/data
-      - ./platform/db/init-user-service.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./platform/db/init.sql:/docker-entrypoint-initdb.d/01-schema.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d user_service"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Portfolio Service Database
-  postgres-portfolio:
-    image: postgres:15-alpine
-    container_name: postgres-portfolio
+  # Spark Master
+  spark-master:
+    image: apache/spark:3.5.0
+    container_name: spark-master
     networks: [lakehouse]
     ports:
-      - "5435:5432"
+      - "0.0.0.0:8081:8080"
+      - "0.0.0.0:7077:7077"
     environment:
-      - POSTGRES_DB=portfolio_service
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - PYSPARK_PYTHON=python3
+      - PYSPARK_DRIVER_PYTHON=python3
+      # S3/MinIO Configuration
+      - SPARK_CONF_spark_hadoop_fs_s3a_endpoint=http://minio:9000
+      - SPARK_CONF_spark_hadoop_fs_s3a_access_key=${MINIO_ROOT_USER}
+      - SPARK_CONF_spark_hadoop_fs_s3a_secret_key=${MINIO_ROOT_PASSWORD}
+      - SPARK_CONF_spark_hadoop_fs_s3a_path_style_access=true
+      - SPARK_CONF_spark_hadoop_fs_s3a_impl=org.apache.hadoop.fs.s3a.S3AFileSystem
+      # Iceberg Configuration
+      - SPARK_CONF_spark_sql_extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
     volumes:
-      - ./data/postgres-portfolio:/var/lib/postgresql/data
-      - ./platform/db/init-portfolio-service.sql:/docker-entrypoint-initdb.d/01-init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d portfolio_service"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - ./config/spark:/opt/bitnami/spark/conf
+      - ./notebooks:/opt/notebooks
+      - ./scripts:/opt/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
-  # Order Service Database
-  postgres-orders:
-    image: postgres:15-alpine
-    container_name: postgres-orders
+  # Spark Worker
+  spark-worker:
+    image: apache/spark:3.5.0
+    container_name: spark-worker
     networks: [lakehouse]
-    ports:
-      - "5436:5432"
     environment:
-      - POSTGRES_DB=order_service
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - ./data/postgres-orders:/var/lib/postgresql/data
-      - ./platform/db/init-order-service.sql:/docker-entrypoint-initdb.d/01-init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d order_service"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Transaction Service Database
-  postgres-transactions:
-    image: postgres:15-alpine
-    container_name: postgres-transactions
-    networks: [lakehouse]
-    ports:
-      - "5437:5432"
-    environment:
-      - POSTGRES_DB=transaction_service
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - ./data/postgres-transactions:/var/lib/postgresql/data
-      - ./platform/db/init-transaction-service.sql:/docker-entrypoint-initdb.d/01-init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d transaction_service"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Analytics Service Database (read-only OHLCV data)
-  postgres-analytics:
-    image: postgres:15-alpine
-    container_name: postgres-analytics
-    networks: [lakehouse]
-    ports:
-      - "5438:5432"
-    environment:
-      - POSTGRES_DB=analytics_service
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - ./data/postgres-analytics:/var/lib/postgresql/data
-      - ./platform/db/init-analytics-service.sql:/docker-entrypoint-initdb.d/01-init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d analytics_service"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      # S3/MinIO Configuration
+      - SPARK_CONF_spark_hadoop_fs_s3a_endpoint=http://minio:9000
+      - SPARK_CONF_spark_hadoop_fs_s3a_access_key=${MINIO_ROOT_USER}
+      - SPARK_CONF_spark_hadoop_fs_s3a_secret_key=${MINIO_ROOT_PASSWORD}
+      - SPARK_CONF_spark_hadoop_fs_s3a_path_style_access=true
+      - SPARK_CONF_spark_hadoop_fs_s3a_impl=org.apache.hadoop.fs.s3a.S3AFileSystem
+    depends_on:
+      - spark-master
 
   # MinIO Client для создания buckets
   minio-setup:

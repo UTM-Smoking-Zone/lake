@@ -10,14 +10,12 @@ app.use(express.json());
 const PORT = process.env.PORT || 8006;
 
 const pool = new Pool({
-  host: process.env.POSTGRES_HOST || 'postgres-user',
+  host: process.env.POSTGRES_HOST || 'postgres',
   port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'user_service',
+  database: process.env.POSTGRES_DB || 'lakehouse',
   user: process.env.POSTGRES_USER || 'admin',
   password: process.env.POSTGRES_PASSWORD || 'admin123'
 });
-
-console.log(`✅ User Service connecting to: ${process.env.POSTGRES_HOST || 'postgres-user'}/${process.env.POSTGRES_DB || 'user_service'}`);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'user-service' });
@@ -49,8 +47,9 @@ app.post('/users', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Hash password with bcrypt (salt rounds: 12)
-    const password_hash = await bcrypt.hash(password, 12);
+    // Hash password with bcrypt
+    const saltRounds = 10;
+    const password_hash = await bcrypt.hash(password, saltRounds);
 
     const result = await pool.query(
       'INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, display_name, is_active, created_at',
@@ -85,10 +84,9 @@ app.post('/users/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Verify password with bcrypt
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
-
-    if (!passwordMatch) {
+    // Compare password using bcrypt
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
