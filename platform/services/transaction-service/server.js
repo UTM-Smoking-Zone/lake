@@ -13,12 +13,25 @@ if (!process.env.POSTGRES_PASSWORD) {
   throw new Error('POSTGRES_PASSWORD environment variable is required');
 }
 
-const pool = new Pool({
+const poolConfig = {
   host: process.env.POSTGRES_HOST || 'postgres-transactions',
   port: process.env.POSTGRES_PORT || 5432,
   database: process.env.POSTGRES_DB || 'transaction_service',
   user: process.env.POSTGRES_USER || 'admin',
-  password: process.env.POSTGRES_PASSWORD
+  password: process.env.POSTGRES_PASSWORD,
+  max: 20,
+  min: 2,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 3000,
+  statement_timeout: 30000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000
+};
+
+const pool = new Pool(poolConfig);
+
+pool.on('error', (err) => {
+  console.error('Unexpected database pool error:', err);
 });
 
 app.get('/health', (req, res) => {

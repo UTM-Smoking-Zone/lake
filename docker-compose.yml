@@ -124,6 +124,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
       - PORTFOLIO_SERVICE_URL=http://portfolio-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002
       - TRANSACTION_SERVICE_URL=http://transaction-service:8003
@@ -261,6 +262,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8006/health"]
       interval: 10s

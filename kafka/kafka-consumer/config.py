@@ -1,13 +1,14 @@
 from dataclasses import dataclass, asdict
+import os
 
 @dataclass
 class KafkaConfig:
     bootstrap_servers: str = "kafka:9092"
-    group_id: str = "crypto-iceberg-consumer-v3-compressed" 
+    group_id: str = "crypto-iceberg-consumer-v3-compressed"
     auto_offset_reset: str = "latest"
     enable_auto_commit: bool = True
     auto_commit_interval_ms: int = 1000
-    
+
     def to_dict(self):
         return {
             'bootstrap.servers': self.bootstrap_servers,
@@ -19,11 +20,12 @@ class KafkaConfig:
 
 @dataclass
 class IcebergConfig:
-    catalog_uri: str = "postgresql://admin:admin123@postgres:5432/lakehouse"
+    # Use environment variables for credentials
+    catalog_uri: str = f"postgresql://{os.getenv('POSTGRES_USER', 'admin')}:{os.getenv('POSTGRES_PASSWORD', 'admin123')}@postgres:5432/{os.getenv('POSTGRES_DB', 'lakehouse')}"
     warehouse: str = "s3://warehouse/"
     s3_endpoint: str = "http://minio:9000"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin123"
+    s3_access_key: str = os.getenv('MINIO_ROOT_USER', 'minioadmin')
+    s3_secret_key: str = os.getenv('MINIO_ROOT_PASSWORD', 'minioadmin123')
 
 @dataclass
 class BatchConfig:
