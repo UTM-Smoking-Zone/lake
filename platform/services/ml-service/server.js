@@ -8,9 +8,14 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8005;
 const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:8004';
+const ML_PREDICTION_SERVICE_URL = process.env.ML_PREDICTION_SERVICE_URL || 'http://ml-prediction-service:8007';
+
+// Configure axios with timeouts
+axios.defaults.timeout = 5000; // 5 seconds default
 
 console.log(`✅ ML Service starting (stateless - uses Analytics Service API)`);
 console.log(`📊 Analytics Service URL: ${ANALYTICS_SERVICE_URL}`);
+console.log(`🤖 ML Prediction Service URL: ${ML_PREDICTION_SERVICE_URL}`);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'ml-service' });
@@ -138,17 +143,38 @@ app.post('/backtest', async (req, res) => {
     const totalTrades = trades.filter(t => t.type === 'sell').length;
     const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
-    // Calculate max drawdown
+    // Calculate max drawdown and equity curve
     let peak = 10000;
     let maxDrawdown = 0;
     let equity = 10000;
+    const returns = [];
 
     for (const trade of trades) {
       if (trade.type === 'sell') {
+        const prevEquity = equity;
         equity += trade.pnl;
         if (equity > peak) peak = equity;
         const drawdown = ((peak - equity) / peak) * 100;
         if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+
+        // Calculate return for this trade
+        returns.push((equity - prevEquity) / prevEquity);
+      }
+    }
+
+    // Calculate proper Sharpe Ratio
+    // Sharpe = (Mean Return - Risk Free Rate) / Std Dev of Returns
+    // Assuming risk-free rate = 0 for simplicity
+    let sharpeRatio = 0;
+    if (returns.length > 1) {
+      const meanReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+      const variance = returns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / returns.length;
+      const stdDev = Math.sqrt(variance);
+
+      if (stdDev > 0) {
+        sharpeRatio = meanReturn / stdDev;
+        // Annualize (approximate: assuming ~250 trading periods per year)
+        sharpeRatio = sharpeRatio * Math.sqrt(250);
       }
     }
 
@@ -159,7 +185,7 @@ app.post('/backtest', async (req, res) => {
       lookback_days,
       total_return: totalReturn.toFixed(2),
       total_return_abs: (cash - 10000).toFixed(2),
-      sharpe_ratio: (totalReturn / Math.max(maxDrawdown, 1)).toFixed(2),
+      sharpe_ratio: sharpeRatio.toFixed(2),
       max_drawdown: maxDrawdown.toFixed(2),
       win_rate: winRate.toFixed(2),
       trades: totalTrades,
@@ -177,8 +203,11 @@ app.post('/backtest', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`ML Service running on port ${PORT}`);
-});
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`ML Service running on port ${PORT}`);
+  });
+}
 
 module.exports = app;

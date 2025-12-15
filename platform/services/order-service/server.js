@@ -14,9 +14,9 @@ if (!process.env.POSTGRES_PASSWORD) {
 }
 
 const poolConfig = {
-  host: process.env.POSTGRES_HOST || 'postgres-orders',
+  host: process.env.POSTGRES_HOST || 'postgres',
   port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'order_service',
+  database: process.env.POSTGRES_DB || 'lakehouse',
   user: process.env.POSTGRES_USER || 'admin',
   password: process.env.POSTGRES_PASSWORD,
   max: 20,
@@ -101,8 +101,196 @@ app.get('/orders/:portfolioId', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Order Service running on port ${PORT}`);
+// Execute order (fills market order immediately)
+app.post('/orders/:orderId/execute', async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { orderId } = req.params;
+    const { execution_price } = req.body; // Price at which order was filled
+    const userId = req.headers['x-user-id']; // User ID from API Gateway
+
+    // Security: Verify user ID is present
+    if (!userId) {
+      await client.query('ROLLBACK');
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Get order details and verify ownership
+    const orderResult = await client.query(`
+      SELECT o.*, s.symbol, s.base_asset_id, s.quote_asset_id, p.user_id
+      FROM orders o
+      JOIN symbols s ON o.symbol_id = s.id
+      JOIN portfolios p ON o.portfolio_id = p.id
+      WHERE o.id = $1 AND o.status IN ('new', 'open') AND p.user_id = $2
+      FOR UPDATE
+    `, [orderId, userId]);
+
+    if (orderResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found, already executed, or access denied' });
+    }
+
+    const order = orderResult.rows[0];
+    const fillPrice = execution_price || order.price || 0;
+    const notional = fillPrice * parseFloat(order.quantity);
+
+    // Check if user has sufficient balance
+    if (order.side === 'buy') {
+      // Buying crypto: need quote asset (e.g., USDT)
+      const balanceResult = await client.query(
+        'SELECT qty FROM balances WHERE portfolio_id = $1 AND asset_id = $2',
+        [order.portfolio_id, order.quote_asset_id]
+      );
+
+      const availableBalance = balanceResult.rows.length > 0 ? parseFloat(balanceResult.rows[0].qty) : 0;
+
+      if (availableBalance < notional) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'Insufficient balance',
+          required: notional,
+          available: availableBalance
+        });
+      }
+
+      // Deduct quote asset
+      await client.query(`
+        INSERT INTO balances (portfolio_id, asset_id, qty, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (portfolio_id, asset_id)
+        DO UPDATE SET qty = balances.qty - $3, updated_at = NOW()
+      `, [order.portfolio_id, order.quote_asset_id, notional]);
+
+      // Add base asset
+      await client.query(`
+        INSERT INTO balances (portfolio_id, asset_id, qty, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (portfolio_id, asset_id)
+        DO UPDATE SET qty = balances.qty + $3, updated_at = NOW()
+      `, [order.portfolio_id, order.base_asset_id, order.quantity]);
+
+    } else {
+      // Selling crypto: need base asset (e.g., BTC)
+      const balanceResult = await client.query(
+        'SELECT qty FROM balances WHERE portfolio_id = $1 AND asset_id = $2',
+        [order.portfolio_id, order.base_asset_id]
+      );
+
+      const availableBalance = balanceResult.rows.length > 0 ? parseFloat(balanceResult.rows[0].qty) : 0;
+
+      if (availableBalance < parseFloat(order.quantity)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'Insufficient balance',
+          required: parseFloat(order.quantity),
+          available: availableBalance
+        });
+      }
+
+      // Deduct base asset
+      await client.query(`
+        INSERT INTO balances (portfolio_id, asset_id, qty, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (portfolio_id, asset_id)
+        DO UPDATE SET qty = balances.qty - $3, updated_at = NOW()
+      `, [order.portfolio_id, order.base_asset_id, order.quantity]);
+
+      // Add quote asset
+      await client.query(`
+        INSERT INTO balances (portfolio_id, asset_id, qty, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (portfolio_id, asset_id)
+        DO UPDATE SET qty = balances.qty + $3, updated_at = NOW()
+      `, [order.portfolio_id, order.quote_asset_id, notional]);
+    }
+
+    // Update order status
+    await client.query(
+      'UPDATE orders SET status = $1, updated_ts = NOW() WHERE id = $2',
+      ['filled', orderId]
+    );
+
+    // Create trade record
+    await client.query(`
+      INSERT INTO trades (
+        portfolio_id, symbol_id, exchange_id, order_id,
+        external_trade_id, side, price, quantity, trade_ts
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+    `, [
+      order.portfolio_id,
+      order.symbol_id,
+      order.exchange_id,
+      orderId,
+      `exec_${orderId}_${Date.now()}`,
+      order.side,
+      fillPrice,
+      order.quantity
+    ]);
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      order_id: orderId,
+      status: 'filled',
+      fill_price: fillPrice,
+      quantity: order.quantity,
+      notional: notional
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Execute order error:', error);
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
 });
+
+// Cancel order
+app.patch('/orders/:orderId/cancel', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.headers['x-user-id']; // User ID from API Gateway
+
+    // Security: Verify user ID is present
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Update order only if user owns it (via portfolio)
+    const result = await pool.query(
+      `UPDATE orders o
+       SET status = 'canceled', updated_ts = NOW()
+       FROM portfolios p
+       WHERE o.id = $1 AND o.status IN ('new', 'open')
+         AND o.portfolio_id = p.id AND p.user_id = $2
+       RETURNING o.*`,
+      [orderId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found, cannot be canceled, or access denied' });
+    }
+
+    res.json({
+      success: true,
+      order: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Cancel order error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Order Service running on port ${PORT}`);
+  });
+}
 
 module.exports = app;

@@ -19,7 +19,10 @@ describe('Authentication Middleware', () => {
       authMiddleware(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'No authorization token provided' });
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'No authorization header',
+        message: 'Please provide a valid JWT token'
+      });
       expect(next).not.toHaveBeenCalled();
     });
 
@@ -29,7 +32,10 @@ describe('Authentication Middleware', () => {
       authMiddleware(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid authorization format. Use: Bearer <token>' });
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Invalid token',
+        message: 'The provided token is invalid'
+      });
       expect(next).not.toHaveBeenCalled();
     });
 

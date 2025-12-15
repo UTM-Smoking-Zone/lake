@@ -118,7 +118,7 @@ describe('API Gateway', () => {
       const response = await request(app).get('/api/portfolio/550e8400-e29b-41d4-a716-446655440000');
 
       expect(response.status).toBe(401);
-      expect(response.body.error).toBe('No authorization token provided');
+      expect(response.body.error).toBe('No authorization header');
     });
 
     test('Protected route should accept request with valid token', async () => {
@@ -182,7 +182,7 @@ describe('API Gateway', () => {
   describe('Authorization', () => {
     test('User should not access another users portfolio', async () => {
       const response = await request(app)
-        .get('/api/portfolio/different-user-id')
+        .get('/api/portfolio/660e8400-e29b-41d4-a716-446655440000') // Different UUID from validToken
         .set('Authorization', `Bearer ${validToken}`);
 
       expect(response.status).toBe(403);

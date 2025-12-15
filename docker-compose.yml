@@ -10,6 +10,8 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
 
   kafka:
     healthcheck:
@@ -131,6 +133,7 @@ services:
       - ANALYTICS_SERVICE_URL=http://analytics-service:8004
       - ML_SERVICE_URL=http://ml-service:8005
       - USER_SERVICE_URL=http://user-service:8006
+      - ML_PREDICTION_SERVICE_URL=http://ml-prediction-service:8007
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
@@ -220,9 +223,16 @@ services:
     ports:
       - "8004:8004"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     healthcheck:
@@ -239,12 +249,34 @@ services:
     networks: [lakehouse]
     ports:
       - "8005:8005"
+    environment:
+      - ANALYTICS_SERVICE_URL=http://analytics-service:8004
+      - ML_PREDICTION_SERVICE_URL=http://ml-prediction-service:8007
+    depends_on:
+      - analytics-service
+      - ml-prediction-service
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8005/health"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # ML Prediction Service - Python/TensorFlow predictions
+  ml-prediction-service:
+    build: ./platform/services/ml-prediction-service
+    container_name: ml-prediction-service
+    networks: [lakehouse]
+    ports:
+      - "8007:8007"
+    environment:
+      - PORT=8007
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # User Service - User management
   user-service:
@@ -289,6 +321,7 @@ services:
       - DEFAULT_SYMBOL=BTCUSDT
       - DEFAULT_INTERVAL=1m
       - DEFAULT_LIMIT=500
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
 
   # MinIO - S3 Compatible Storage
   minio:

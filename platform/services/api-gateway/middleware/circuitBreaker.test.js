@@ -38,12 +38,14 @@ describe('Circuit Breaker Middleware', () => {
       });
     });
 
-    test('Should throw error when service fails', async () => {
+    test('Should return fallback response when service fails', async () => {
       axios.mockRejectedValue(new Error('Service unavailable'));
 
-      await expect(
-        protectedRequest('portfolio', 'http://portfolio:8001', '/portfolio/user123')
-      ).rejects.toThrow();
+      const result = await protectedRequest('portfolio', 'http://portfolio:8001', '/portfolio/user123');
+
+      expect(result).toHaveProperty('error', 'Service temporarily unavailable');
+      expect(result).toHaveProperty('service', 'portfolio');
+      expect(result).toHaveProperty('status', 'circuit_open');
     });
 
     test('Should use fallback when circuit opens after threshold failures', async () => {

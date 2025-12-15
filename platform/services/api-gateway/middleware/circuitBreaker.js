@@ -82,9 +82,9 @@ const serviceBreakers = {};
  */
 function getServiceBreaker(serviceName, serviceUrl) {
   if (!serviceBreakers[serviceName]) {
-    const asyncFunction = async (path, method = 'GET', data = null) => {
+    const asyncFunction = async (path, method = 'GET', data = null, headers = {}) => {
       const url = `${serviceUrl}${path}`;
-      const response = await axios({ method, url, data });
+      const response = await axios({ method, url, data, headers });
       return response.data;
     };
 
@@ -101,13 +101,14 @@ function getServiceBreaker(serviceName, serviceUrl) {
  * @param {string} path - Request path
  * @param {string} method - HTTP method
  * @param {Object} data - Request data
+ * @param {Object} headers - Additional headers to pass
  * @returns {Promise<Object>} Response data
  */
-async function protectedRequest(serviceName, serviceUrl, path, method = 'GET', data = null) {
+async function protectedRequest(serviceName, serviceUrl, path, method = 'GET', data = null, headers = {}) {
   const breaker = getServiceBreaker(serviceName, serviceUrl);
 
   try {
-    const result = await breaker.fire(path, method, data);
+    const result = await breaker.fire(path, method, data, headers);
     return result;
   } catch (error) {
     // If circuit is open, the fallback will be called automatically

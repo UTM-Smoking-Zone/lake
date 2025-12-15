@@ -1,0 +1,43 @@
+{
+  "threshold": 0.852637529373169,
+  "precision": 0.954599761051374,
+  "recall": 0.8838495575221239,
+  "f1": 0.9178632969557725,
+  "auc": 0.9688977758064401,
+  "confusion_matrix": [
+    1199,
+    38,
+    105,
+    799
+  ],
+  "best_epoch": {
+    "epoch": 95,
+    "train_loss": 0.26176711916923523,
+    "train_auc": 0.9565733075141907,
+    "val_loss": 0.21938547492027283,
+    "val_auc": 0.9741671085357666,
+    "val_precision": 0.8688889145851135,
+    "val_recall": 0.9243499040603638
+  },
+  "trading_metrics": {
+    "profit_per_signal": 1.863799283154122,
+    "efficiency": 0.8481953290870489,
+    "risk_reward_ratio": 21.026315789473685,
+    "sharpe_approx": 4.476405437644828
+  },
+  "selected_features": [
+    "high",
+    "sma_20",
+    "sma_50",
+    "sma_200",
+    "bb_middle",
+    "bb_upper",
+    "volatility_10d",
+    "volatility_14d",
+    "macd_12_26",
+    "macd_5_35",
+    "macd_signal_5_35",
+    "below_all_sma"
+  ],
+  "sequence_length": 15
+}

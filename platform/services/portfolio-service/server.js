@@ -15,9 +15,9 @@ if (!process.env.POSTGRES_PASSWORD) {
 
 // Database pool configuration with limits
 const poolConfig = {
-  host: process.env.POSTGRES_HOST || 'postgres-portfolio',
+  host: process.env.POSTGRES_HOST || 'postgres',
   port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'portfolio_service',
+  database: process.env.POSTGRES_DB || 'lakehouse',
   user: process.env.POSTGRES_USER || 'admin',
   password: process.env.POSTGRES_PASSWORD,
   max: 20,
@@ -35,7 +35,7 @@ pool.on('error', (err) => {
   console.error('Unexpected database pool error:', err);
 });
 
-console.log(`✅ Portfolio Service connecting to: ${process.env.POSTGRES_HOST || 'postgres-portfolio'}/${process.env.POSTGRES_DB || 'portfolio_service'}`);
+console.log(`✅ Portfolio Service connecting to: ${process.env.POSTGRES_HOST || 'postgres'}/${process.env.POSTGRES_DB || 'lakehouse'}`);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'portfolio-service' });
@@ -103,8 +103,11 @@ app.post('/portfolio', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Portfolio Service running on port ${PORT}`);
-});
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Portfolio Service running on port ${PORT}`);
+  });
+}
 
 module.exports = app;

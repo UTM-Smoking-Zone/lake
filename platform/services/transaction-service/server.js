@@ -14,9 +14,9 @@ if (!process.env.POSTGRES_PASSWORD) {
 }
 
 const poolConfig = {
-  host: process.env.POSTGRES_HOST || 'postgres-transactions',
+  host: process.env.POSTGRES_HOST || 'postgres',
   port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'transaction_service',
+  database: process.env.POSTGRES_DB || 'lakehouse',
   user: process.env.POSTGRES_USER || 'admin',
   password: process.env.POSTGRES_PASSWORD,
   max: 20,
@@ -116,8 +116,11 @@ app.post('/trades', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Transaction Service running on port ${PORT}`);
-});
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Transaction Service running on port ${PORT}`);
+  });
+}
 
 module.exports = app;

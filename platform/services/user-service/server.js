@@ -249,8 +249,11 @@ app.post('/users/login', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`User Service running on port ${PORT}`);
-});
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`User Service running on port ${PORT}`);
+  });
+}
 
 module.exports = app;

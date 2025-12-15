@@ -4,6 +4,8 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const { createClient } = require('redis');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
+const csrf = require('csurf');
 const { authMiddleware, optionalAuth, verifySocketToken } = require('./middleware/auth');
 const { validate, schemas } = require('./middleware/validation');
 const { protectedRequest, getCircuitBreakerHealth } = require('./middleware/circuitBreaker');
@@ -29,6 +31,16 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use(cookieParser());
+
+// CSRF protection for mutating requests
+const csrfProtection = csrf({
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  }
+});
 
 // Rate limiting - protect against DDoS and brute force attacks
 const limiter = rateLimit({
@@ -60,7 +72,8 @@ const services = {
   transaction: process.env.TRANSACTION_SERVICE_URL || 'http://transaction-service:8003',
   analytics: process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:8004',
   ml: process.env.ML_SERVICE_URL || 'http://ml-service:8005',
-  user: process.env.USER_SERVICE_URL || 'http://user-service:8006'
+  user: process.env.USER_SERVICE_URL || 'http://user-service:8006',
+  mlPrediction: process.env.ML_PREDICTION_SERVICE_URL || 'http://ml-prediction-service:8007'
 };
 
 app.get('/health', async (req, res) => {
@@ -76,11 +89,16 @@ app.get('/health', async (req, res) => {
   });
 });
 
-async function proxyRequest(serviceName, path, method = 'GET', data = null) {
+// CSRF token endpoint - frontend must call this before making mutating requests
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
+  res.json({ csrfToken: req.csrfToken() });
+});
+
+async function proxyRequest(serviceName, path, method = 'GET', data = null, headers = {}) {
   const serviceUrl = services[serviceName];
   try {
     // Use circuit breaker for resilient service communication
-    const result = await protectedRequest(serviceName, serviceUrl, path, method, data);
+    const result = await protectedRequest(serviceName, serviceUrl, path, method, data, headers);
     return result;
   } catch (error) {
     throw error;
@@ -120,7 +138,7 @@ app.get('/api/portfolio/:userId', authMiddleware, validate(schemas.userId, 'para
   }
 });
 
-app.post('/api/orders', authMiddleware, validate(schemas.createOrder), async (req, res) => {
+app.post('/api/orders', csrfProtection, authMiddleware, validate(schemas.createOrder), async (req, res) => {
   try {
     // Add user ID to request body for audit trail
     const orderData = { ...req.body, user_id: req.user.id };
@@ -128,6 +146,30 @@ app.post('/api/orders', authMiddleware, validate(schemas.createOrder), async (re
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Execute order
+app.post('/api/orders/:orderId/execute', csrfProtection, authMiddleware, async (req, res) => {
+  try {
+    // Pass user ID in header for ownership verification
+    const headers = { 'x-user-id': req.user.id };
+    const data = await proxyRequest('order', `/orders/${req.params.orderId}/execute`, 'POST', req.body, headers);
+    res.json(data);
+  } catch (error) {
+    res.status(error.response?.status || 500).json({ error: error.message });
+  }
+});
+
+// Cancel order
+app.patch('/api/orders/:orderId/cancel', csrfProtection, authMiddleware, async (req, res) => {
+  try {
+    // Pass user ID in header for ownership verification
+    const headers = { 'x-user-id': req.user.id };
+    const data = await proxyRequest('order', `/orders/${req.params.orderId}/cancel`, 'PATCH', req.body, headers);
+    res.json(data);
+  } catch (error) {
+    res.status(error.response?.status || 500).json({ error: error.message });
   }
 });
 
@@ -159,6 +201,62 @@ app.get('/api/ml/predict', optionalAuth, validate(schemas.mlPredictionQuery, 'qu
   try {
     const { symbol, horizon } = req.query;
     const data = await proxyRequest('ml', `/predict?symbol=${symbol}&horizon=${horizon}`);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Analytics Service routes
+app.get('/api/analytics/health', optionalAuth, async (req, res) => {
+  try {
+    const data = await proxyRequest('analytics', '/health');
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/analytics/ohlcv/:symbol', optionalAuth, async (req, res) => {
+  try {
+    const data = await proxyRequest('analytics', `/ohlcv/${req.params.symbol}?${new URLSearchParams(req.query).toString()}`);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/analytics/indicators/:symbol', optionalAuth, async (req, res) => {
+  try {
+    const data = await proxyRequest('analytics', `/indicators/${req.params.symbol}?${new URLSearchParams(req.query).toString()}`);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/analytics/ml-features/:symbol', optionalAuth, async (req, res) => {
+  try {
+    const data = await proxyRequest('analytics', `/ml-features/${req.params.symbol}?${new URLSearchParams(req.query).toString()}`);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ML Prediction Service - Advanced Keras model predictions
+app.post('/api/ml/predict-advanced', optionalAuth, async (req, res) => {
+  try {
+    const data = await proxyRequest('mlPrediction', '/predict', 'POST', req.body);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/ml/model-info', optionalAuth, async (req, res) => {
+  try {
+    const data = await proxyRequest('mlPrediction', '/model-info');
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -235,10 +333,13 @@ async function broadcastPriceUpdates() {
   }
 }
 
-setInterval(broadcastPriceUpdates, 1000);
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(broadcastPriceUpdates, 1000);
 
-httpServer.listen(PORT, () => {
-  console.log(`API Gateway running on port ${PORT}`);
-});
+  httpServer.listen(PORT, () => {
+    console.log(`API Gateway running on port ${PORT}`);
+  });
+}
 
 module.exports = app;
