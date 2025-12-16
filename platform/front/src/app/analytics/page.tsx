@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import PortfolioBalance from '@/components/PortfolioBalance';
 
 export default function AnalyticsPage() {
   const { user, isLoading } = useAuth();
@@ -40,7 +41,7 @@ export default function AnalyticsPage() {
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-400">Account Balance</p>
-              <p className="text-xl font-bold text-green-400">$12,459.30</p>
+              <PortfolioBalance />
             </div>
           </div>
         </header>

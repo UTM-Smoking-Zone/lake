@@ -63,6 +63,8 @@ export default function PortfolioPage() {
   useEffect(() => {
     if (!isLoading && !user) {
       router.push('/auth');
+    } else if (user) {
+      fetchPortfolioData();
     }
   }, [user, isLoading, router]);
 
@@ -148,9 +150,11 @@ export default function PortfolioPage() {
                 <thead>
                   <tr className="border-b border-gray-700">
                     <th className="py-2 text-gray-400 font-medium">Asset</th>
+                    <th className="py-2 text-gray-400 font-medium">Name</th>
                     <th className="py-2 text-gray-400 font-medium">Amount</th>
+                    <th className="py-2 text-gray-400 font-medium">Price</th>
                     <th className="py-2 text-gray-400 font-medium">Value</th>
-                    <th className="py-2 text-gray-400 font-medium">P&L</th>
+                    <th className="py-2 text-gray-400 font-medium">Allocation</th>
                   </tr>
                 </thead>
                 <tbody className="text-white">
@@ -178,6 +182,11 @@ export default function PortfolioPage() {
                   )}
                 </tbody>
               </table>
+              {(!portfolio?.balances || portfolio.balances.length === 0) && (
+                <div className="text-center py-8 text-gray-400">
+                  No holdings found
+                </div>
+              )}
             </div>
           </div>
         </main>
