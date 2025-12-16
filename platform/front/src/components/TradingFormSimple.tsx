@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Notification from './Notification';
 
 interface Portfolio {
   id: string;
@@ -44,12 +45,36 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   const [orders, setOrders] = useState<Order[]>([]);
   const [cryptoPrices, setCryptoPrices] = useState<Record<string, number>>({});
   const [totalValue, setTotalValue] = useState(0);
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+    isVisible: boolean;
+  }>({
+    message: '',
+    type: 'info',
+    isVisible: false,
+  });
 
   // Temporary direct API access for testing (bypass API Gateway auth)
   const PORTFOLIO_API = 'http://localhost:8001';
   const ORDER_API = 'http://localhost:8002';
   const TRANSACTION_API = 'http://localhost:8003';
   const TEST_USER_ID = '1';
+
+  const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
+    setNotification({
+      message,
+      type,
+      isVisible: true,
+    });
+  };
+
+  const hideNotification = () => {
+    setNotification(prev => ({
+      ...prev,
+      isVisible: false,
+    }));
+  };
 
   useEffect(() => {
     fetchPortfolio();
@@ -220,9 +245,15 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
         }
 
         const execution = await executeResponse.json();
-        alert(`✅ Trade executed successfully!\\n${execution.side.toUpperCase()} ${execution.quantity} ${selectedCoin} at $${execution.fill_price.toLocaleString()}`);
+        showNotification(
+          `✅ Trade executed successfully!\n${execution.side.toUpperCase()} ${execution.quantity} ${selectedCoin} at $${execution.fill_price.toLocaleString()}`,
+          'success'
+        );
       } else {
-        alert(`✅ Limit order placed successfully!\\nOrder ID: ${order.id}`);
+        showNotification(
+          `✅ Limit order placed successfully!\nOrder ID: ${order.id}`,
+          'success'
+        );
       }
 
       // Reset form
@@ -237,7 +268,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
 
     } catch (error) {
       console.error('Trading error:', error);
-      alert(`❌ Trading failed: ${error}`);
+      showNotification(`❌ Trading failed: ${error}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -458,6 +489,14 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
           )}
         </div>
       </div>
+
+      {/* Notification */}
+      <Notification
+        message={notification.message}
+        type={notification.type}
+        isVisible={notification.isVisible}
+        onClose={hideNotification}
+      />
     </div>
   );
 }
