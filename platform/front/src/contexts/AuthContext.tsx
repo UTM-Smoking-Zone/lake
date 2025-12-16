@@ -37,11 +37,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = async (token: string) => {
     try {
-      // For now, we'll skip token validation since user service doesn't support JWT
-      // Just mark as authenticated if token exists with the correct user ID from database
-      setUser({ id: '4', email: 'user@example.com' });
-      return;
-      /*
       const response = await fetch('http://localhost:8006/users/profile', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -50,11 +45,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (response.ok) {
         const userData = await response.json();
-        setUser(userData);
+        setUser({
+          id: userData.id?.toString() || 'unknown',
+          email: userData.email || 'unknown',
+          firstName: userData.display_name?.split(' ')[0] || 'User',
+          lastName: userData.display_name?.split(' ')[1] || ''
+        });
       } else {
         localStorage.removeItem('token');
       }
-      */
     } catch (error) {
       console.error('Error fetching profile:', error);
       localStorage.removeItem('token');
@@ -78,12 +77,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const userData = await response.json();
-    localStorage.setItem('token', 'authenticated'); // Simple token since no JWT
+    
+    // Store real JWT token if available, otherwise use simple token
+    const token = userData.token || 'authenticated';
+    localStorage.setItem('token', token);
+    
     setUser({
-      id: '4', // Known user ID from database
-      email: email,
-      firstName: 'Test',
-      lastName: 'User'
+      id: userData.id?.toString() || 'unknown',
+      email: userData.email || email,
+      firstName: userData.display_name?.split(' ')[0] || 'User',
+      lastName: userData.display_name?.split(' ')[1] || ''
     });
     router.push('/dashboard');
   };
