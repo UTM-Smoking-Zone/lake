@@ -25,15 +25,6 @@ export default function TradingPage() {
   const [selectedCoinData, setSelectedCoinData] = useState<CoinData | null>(null);
   const [isLoadingCoins, setIsLoadingCoins] = useState(false);
 
-  // Trading form state
-  const [side, setSide] = useState<'buy' | 'sell'>('buy');
-  const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
-  const [amount, setAmount] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [orderMessage, setOrderMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
-
   // Mapping of crypto symbols to Binance trading pairs
   const cryptoMapping = {
     BTC: 'BTCUSDT',
@@ -112,67 +103,6 @@ export default function TradingPage() {
     const coinData = coinsList.find(coin => coin.symbol === symbol);
     setSelectedCoin(symbol);
     setSelectedCoinData(coinData || null);
-  };
-
-  const handleSubmitOrder = async () => {
-    if (!user || !selectedCoin) return;
-
-    setIsSubmitting(true);
-    setOrderMessage(null);
-
-    try {
-      // Get CSRF token from localStorage (stored during login/register)
-      const csrfToken = localStorage.getItem('csrfToken');
-      if (!csrfToken) {
-        throw new Error('CSRF token not found. Please log in again.');
-      }
-
-      const token = localStorage.getItem('token');
-      const orderData = {
-        symbol_id: 1, // TODO: Map selectedCoin to symbol_id from database
-        portfolio_id: 1, // TODO: Get from user's actual portfolio
-        side,
-        type: orderType,
-        quantity: parseFloat(quantity) || 0,
-        price: orderType === 'limit' || orderType === 'stop' ? parseFloat(price) : null
-      };
-
-      const response = await fetch('http://localhost:8000/api/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'X-CSRF-Token': csrfToken
-        },
-        credentials: 'include',
-        body: JSON.stringify(orderData)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create order');
-      }
-
-      const result = await response.json();
-      setOrderMessage({
-        type: 'success',
-        text: `Order created successfully! Order ID: ${result.order?.id || 'N/A'}`
-      });
-
-      // Reset form
-      setQuantity('');
-      setPrice('');
-      setAmount('');
-
-    } catch (error) {
-      console.error('Order submission error:', error);
-      setOrderMessage({
-        type: 'error',
-        text: error instanceof Error ? error.message : 'Failed to submit order'
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   useEffect(() => {
@@ -345,104 +275,14 @@ export default function TradingPage() {
 
                 {/* Trading Panel */}
                 <div className="xl:col-span-1">
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4">Trade {selectedCoin}</h3>
-                    
-                    {/* Trading Form */}
-                    <div className="space-y-4">
-                      {orderMessage && (
-                        <div className={`p-3 rounded-lg ${orderMessage.type === 'success' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                          {orderMessage.text}
-                        </div>
-                      )}
-
-                      <div className="flex bg-gray-700 rounded-lg p-1">
-                        <button
-                          onClick={() => setSide('buy')}
-                          className={`flex-1 py-2 px-3 rounded-md text-sm font-medium ${side === 'buy' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                        >
-                          Buy
-                        </button>
-                        <button
-                          onClick={() => setSide('sell')}
-                          className={`flex-1 py-2 px-3 rounded-md text-sm font-medium ${side === 'sell' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                        >
-                          Sell
-                        </button>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Order Type</label>
-                        <select
-                          value={orderType}
-                          onChange={(e) => setOrderType(e.target.value as any)}
-                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                        >
-                          <option value="market">Market</option>
-                          <option value="limit">Limit</option>
-                          <option value="stop">Stop</option>
-                        </select>
-                      </div>
-
-                      {(orderType === 'limit' || orderType === 'stop') && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">Price (USDT)</label>
-                          <input
-                            type="number"
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            placeholder="0.00"
-                            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                          />
-                        </div>
-                      )}
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Amount (USDT)</label>
-                        <input
-                          type="number"
-                          value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
-                          placeholder="0.00"
-                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Quantity ({selectedCoin})</label>
-                        <input
-                          type="number"
-                          value={quantity}
-                          onChange={(e) => setQuantity(e.target.value)}
-                          placeholder="0.00000000"
-                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                        />
-                      </div>
-
-                      <button
-                        onClick={handleSubmitOrder}
-                        disabled={isSubmitting || !quantity || ((orderType === 'limit' || orderType === 'stop') && !price)}
-                        className={`w-full font-medium py-3 rounded-lg transition-colors ${
-                          side === 'buy'
-                            ? 'bg-green-600 hover:bg-green-500 disabled:bg-green-800'
-                            : 'bg-red-600 hover:bg-red-500 disabled:bg-red-800'
-                        } text-white disabled:cursor-not-allowed disabled:opacity-50`}
-                      >
-                        {isSubmitting ? 'Submitting...' : `${side === 'buy' ? 'Buy' : 'Sell'} ${selectedCoin}`}
-                      </button>
-
-                      <div className="text-xs text-gray-400 mt-4">
-                        <div className="flex justify-between">
-                          <span>Available:</span>
-                          <span>12,459.30 USDT</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Fee (0.1%):</span>
-                          <span>~1.25 USDT</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <TradingFormSimple 
+                    selectedCoin={selectedCoin}
+                    selectedCoinData={selectedCoinData}
+                    onTradeSuccess={() => {
+                      // Refresh data after successful trade
+                      fetchCryptoData();
+                    }}
+                  />
 
                   {/* Market Info */}
                   <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mt-4">

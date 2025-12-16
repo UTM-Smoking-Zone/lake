@@ -167,24 +167,19 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // Auth protection - redirect to /auth if not logged in
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push('/auth');
-    }
-  }, [isLoading, user, router]);
+  // Sample crypto data - Top 10 most popular cryptocurrencies (now replaced by real data)
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="text-white text-xl">Loading...</div>
-      </div>
-    );
-  }
+  // if (isLoading) {
+  //   return (
+  //     <div className="min-h-screen flex items-center justify-center bg-gray-900">
+  //       <div className="text-white text-xl">Loading...</div>
+  //     </div>
+  //   );
+  // }
 
-  if (!user) {
-    return null;
-  }
+  // if (!user) {
+  //   return null;
+  // }
 
   return (
     <div className="flex min-h-screen bg-gray-900">

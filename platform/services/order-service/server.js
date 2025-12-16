@@ -94,65 +94,6 @@ app.post('/orders', async (req, res) => {
   }
 });
 
-// Get all orders for a specific user
-app.get('/orders/user/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { portfolio_id, status = 'all', limit = 50, offset = 0 } = req.query;
-
-    let query = `
-      SELECT
-        o.id,
-        o.side,
-        o.type,
-        o.price,
-        o.quantity,
-        o.status,
-        o.created_ts,
-        o.updated_ts,
-        s.symbol,
-        e.code as exchange,
-        p.name as portfolio_name,
-        p.id as portfolio_id
-      FROM orders o
-      JOIN symbols s ON o.symbol_id = s.id
-      JOIN exchanges e ON o.exchange_id = e.id
-      JOIN portfolios p ON o.portfolio_id = p.id
-      WHERE p.user_id = $1
-    `;
-
-    const params = [userId];
-    let paramIndex = 2;
-
-    if (portfolio_id) {
-      query += ` AND o.portfolio_id = $${paramIndex}`;
-      params.push(portfolio_id);
-      paramIndex++;
-    }
-
-    if (status && status !== 'all') {
-      query += ` AND o.status = $${paramIndex}`;
-      params.push(status);
-      paramIndex++;
-    }
-
-    query += ` ORDER BY o.created_ts DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-    params.push(limit, offset);
-
-    const result = await pool.query(query, params);
-
-    res.json({
-      orders: result.rows,
-      total: result.rows.length,
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-  } catch (error) {
-    console.error('Get user orders error:', error);
-    res.status(500).json({ error: 'Failed to fetch orders' });
-  }
-});
-
 app.get('/orders/:portfolioId', async (req, res) => {
   try {
     const { portfolioId } = req.params;
