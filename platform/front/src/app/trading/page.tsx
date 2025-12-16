@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import TradingFormSimple from '@/components/TradingFormSimple';
 
 interface CoinData {
   name: string;
@@ -275,63 +276,14 @@ export default function TradingPage() {
 
                 {/* Trading Panel */}
                 <div className="xl:col-span-1">
-                  <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4">Trade {selectedCoin}</h3>
-                    
-                    {/* Trading Form */}
-                    <div className="space-y-4">
-                      <div className="flex bg-gray-700 rounded-lg p-1">
-                        <button className="flex-1 py-2 px-3 rounded-md bg-green-600 text-white text-sm font-medium">
-                          Buy
-                        </button>
-                        <button className="flex-1 py-2 px-3 rounded-md text-gray-400 text-sm font-medium hover:text-white">
-                          Sell
-                        </button>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Order Type</label>
-                        <select className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
-                          <option>Market</option>
-                          <option>Limit</option>
-                          <option>Stop</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Amount (USDT)</label>
-                        <input 
-                          type="number" 
-                          placeholder="0.00"
-                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Quantity ({selectedCoin})</label>
-                        <input 
-                          type="number" 
-                          placeholder="0.00000000"
-                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                        />
-                      </div>
-
-                      <button className="w-full bg-green-600 hover:bg-green-500 text-white font-medium py-3 rounded-lg transition-colors">
-                        Buy {selectedCoin}
-                      </button>
-
-                      <div className="text-xs text-gray-400 mt-4">
-                        <div className="flex justify-between">
-                          <span>Available:</span>
-                          <span>12,459.30 USDT</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Fee (0.1%):</span>
-                          <span>~1.25 USDT</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <TradingFormSimple 
+                    selectedCoin={selectedCoin}
+                    selectedCoinData={selectedCoinData}
+                    onTradeSuccess={() => {
+                      // Refresh data after successful trade
+                      fetchCryptoData();
+                    }}
+                  />
 
                   {/* Market Info */}
                   <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mt-4">

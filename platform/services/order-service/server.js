@@ -41,6 +41,22 @@ app.get('/health', (req, res) => {
 app.post('/orders', async (req, res) => {
   try {
     const { portfolio_id, symbol, type, side, quantity, price, exchange_code } = req.body;
+    const userId = req.headers['x-user-id']; // From API Gateway
+
+    // Security: Verify user ID is present
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Verify portfolio belongs to user
+    const portfolioResult = await pool.query(
+      'SELECT id FROM portfolios WHERE id = $1 AND user_id = $2',
+      [portfolio_id, userId]
+    );
+
+    if (portfolioResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Portfolio not found or access denied' });
+    }
 
     // Get symbol_id
     const symbolResult = await pool.query(
@@ -62,10 +78,15 @@ app.post('/orders', async (req, res) => {
       return res.status(400).json({ error: 'Exchange not found' });
     }
 
+    // Generate unique external_order_id
+    const externalOrderId = `${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     const result = await pool.query(
-      'INSERT INTO orders (portfolio_id, symbol_id, exchange_id, side, type, price, quantity, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [portfolio_id, symbolResult.rows[0].id, exchangeResult.rows[0].id, side, type, price, quantity, 'new']
+      'INSERT INTO orders (portfolio_id, symbol_id, exchange_id, side, type, price, quantity, status, external_order_id, created_ts, updated_ts) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING *',
+      [portfolio_id, symbolResult.rows[0].id, exchangeResult.rows[0].id, side, type, price, quantity, 'new', externalOrderId]
     );
+    
+    console.log(`✅ Order created: ${result.rows[0].id} for user ${userId}`);
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Create order error:', error);
@@ -75,6 +96,25 @@ app.post('/orders', async (req, res) => {
 
 app.get('/orders/:portfolioId', async (req, res) => {
   try {
+    const { portfolioId } = req.params;
+    const userId = req.headers['x-user-id']; // From API Gateway
+    const { limit = 100, offset = 0 } = req.query;
+
+    // Security: Verify user ID is present
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Security: Verify portfolio belongs to user
+    const portfolioResult = await pool.query(
+      'SELECT id FROM portfolios WHERE id = $1 AND user_id = $2',
+      [portfolioId, userId]
+    );
+
+    if (portfolioResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Portfolio not found or access denied' });
+    }
+
     const result = await pool.query(`
       SELECT
         o.id,
@@ -85,6 +125,7 @@ app.get('/orders/:portfolioId', async (req, res) => {
         o.status,
         o.created_ts,
         o.updated_ts,
+        o.external_order_id,
         s.symbol,
         e.code as exchange
       FROM orders o
@@ -92,8 +133,9 @@ app.get('/orders/:portfolioId', async (req, res) => {
       JOIN exchanges e ON o.exchange_id = e.id
       WHERE o.portfolio_id = $1
       ORDER BY o.created_ts DESC
-      LIMIT 100
-    `, [req.params.portfolioId]);
+      LIMIT $2 OFFSET $3
+    `, [portfolioId, limit, offset]);
+    
     res.json(result.rows);
   } catch (error) {
     console.error('Get orders error:', error);
@@ -120,10 +162,11 @@ app.post('/orders/:orderId/execute', async (req, res) => {
 
     // Get order details and verify ownership
     const orderResult = await client.query(`
-      SELECT o.*, s.symbol, s.base_asset_id, s.quote_asset_id, p.user_id
+      SELECT o.*, s.symbol, s.base_asset_id, s.quote_asset_id, p.user_id, e.code as exchange_code
       FROM orders o
       JOIN symbols s ON o.symbol_id = s.id
       JOIN portfolios p ON o.portfolio_id = p.id
+      JOIN exchanges e ON o.exchange_id = e.id
       WHERE o.id = $1 AND o.status IN ('new', 'open') AND p.user_id = $2
       FOR UPDATE
     `, [orderId, userId]);
@@ -213,12 +256,13 @@ app.post('/orders/:orderId/execute', async (req, res) => {
       ['filled', orderId]
     );
 
-    // Create trade record
-    await client.query(`
+    // Create trade record in trades table
+    const tradeResult = await client.query(`
       INSERT INTO trades (
         portfolio_id, symbol_id, exchange_id, order_id,
         external_trade_id, side, price, quantity, trade_ts
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      RETURNING id
     `, [
       order.portfolio_id,
       order.symbol_id,
@@ -230,14 +274,22 @@ app.post('/orders/:orderId/execute', async (req, res) => {
       order.quantity
     ]);
 
+    const tradeId = tradeResult.rows[0].id;
+
+    console.log(`✅ Order ${orderId} executed: ${order.side} ${order.quantity} ${order.symbol} at ${fillPrice}`);
+    console.log(`✅ Trade created: ${tradeId}`);
+
     await client.query('COMMIT');
 
     res.json({
       success: true,
-      order_id: orderId,
+      order_id: parseInt(orderId),
+      trade_id: tradeId,
       status: 'filled',
+      symbol: order.symbol,
+      side: order.side,
       fill_price: fillPrice,
-      quantity: order.quantity,
+      quantity: parseFloat(order.quantity),
       notional: notional
     });
 

@@ -40,7 +40,25 @@ app.get('/health', (req, res) => {
 
 app.get('/trades/:portfolioId', async (req, res) => {
   try {
+    const { portfolioId } = req.params;
     const { limit = 100, offset = 0 } = req.query;
+    const userId = req.headers['x-user-id']; // From API Gateway
+
+    // Security: Verify user ID is present
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Security: Verify portfolio belongs to user
+    const portfolioResult = await pool.query(
+      'SELECT id FROM portfolios WHERE id = $1 AND user_id = $2',
+      [portfolioId, userId]
+    );
+
+    if (portfolioResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Portfolio not found or access denied' });
+    }
+
     const result = await pool.query(`
       SELECT
         t.id,
@@ -50,17 +68,19 @@ app.get('/trades/:portfolioId', async (req, res) => {
         t.notional,
         t.fee_amount,
         t.trade_ts,
+        t.external_trade_id,
+        t.order_id,
         s.symbol,
-        e.code as exchange,
-        fa.code as fee_asset
+        e.code as exchange
       FROM trades t
       JOIN symbols s ON t.symbol_id = s.id
       JOIN exchanges e ON t.exchange_id = e.id
-      LEFT JOIN assets fa ON t.fee_asset_id = fa.id
       WHERE t.portfolio_id = $1
       ORDER BY t.trade_ts DESC
       LIMIT $2 OFFSET $3
-    `, [req.params.portfolioId, limit, offset]);
+    `, [portfolioId, limit, offset]);
+    
+    console.log(`ℹ️ Retrieved ${result.rows.length} trades for portfolio ${portfolioId}`);
     res.json(result.rows);
   } catch (error) {
     console.error('Get trades error:', error);
@@ -71,6 +91,22 @@ app.get('/trades/:portfolioId', async (req, res) => {
 app.post('/trades', async (req, res) => {
   try {
     const { portfolio_id, symbol, exchange_code, order_id, side, price, quantity, fee_amount, fee_asset_code, trade_ts } = req.body;
+    const userId = req.headers['x-user-id']; // From API Gateway
+
+    // Security: Verify user ID is present
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Security: Verify portfolio belongs to user
+    const portfolioResult = await pool.query(
+      'SELECT id FROM portfolios WHERE id = $1 AND user_id = $2',
+      [portfolio_id, userId]
+    );
+
+    if (portfolioResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Portfolio not found or access denied' });
+    }
 
     // Get symbol_id
     const symbolResult = await pool.query(
@@ -109,9 +145,74 @@ app.post('/trades', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [portfolio_id, symbolResult.rows[0].id, exchangeResult.rows[0].id, order_id, `manual_${Date.now()}`, side, price, quantity, feeAssetId, fee_amount, trade_ts || new Date()]
     );
+    
+    console.log(`✅ Trade created: ${result.rows[0].id} for user ${userId}`);
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Create trade error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's transactions history
+app.get('/transactions/:portfolioId', async (req, res) => {
+  try {
+    const { portfolioId } = req.params;
+    const { limit = 100, offset = 0, type } = req.query;
+    const userId = req.headers['x-user-id']; // From API Gateway
+
+    // Security: Verify user ID is present
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Security: Verify portfolio belongs to user
+    const portfolioResult = await pool.query(
+      'SELECT id FROM portfolios WHERE id = $1 AND user_id = $2',
+      [portfolioId, userId]
+    );
+
+    if (portfolioResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Portfolio not found or access denied' });
+    }
+
+    let query = `
+      SELECT
+        'trade' as transaction_type,
+        t.id,
+        t.side,
+        t.price,
+        t.quantity,
+        t.notional as amount,
+        t.fee_amount,
+        t.trade_ts as created_at,
+        s.symbol,
+        e.code as exchange,
+        t.order_id
+      FROM trades t
+      JOIN symbols s ON t.symbol_id = s.id
+      JOIN exchanges e ON t.exchange_id = e.id
+      WHERE t.portfolio_id = $1
+    `;
+
+    let params = [portfolioId];
+    
+    if (type) {
+      // For now we only have 'trade' type in our schema
+      if (type !== 'trade') {
+        return res.json([]);
+      }
+    }
+
+    query += ` ORDER BY t.trade_ts DESC LIMIT $2 OFFSET $3`;
+    params.push(limit, offset);
+
+    const result = await pool.query(query, params);
+    
+    console.log(`ℹ️ Retrieved ${result.rows.length} transactions for portfolio ${portfolioId}`);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get transactions error:', error);
     res.status(500).json({ error: error.message });
   }
 });
