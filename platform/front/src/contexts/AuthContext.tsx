@@ -64,11 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    const response = await fetch('http://localhost:8006/users/login', {
+    const response = await fetch('http://localhost:8000/api/auth/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include', // Include cookies for CSRF
       body: JSON.stringify({ email, password }),
     });
 
@@ -77,25 +78,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error.error || 'Login failed');
     }
 
-    const userData = await response.json();
-    localStorage.setItem('token', 'authenticated'); // Simple token since no JWT
+    const data = await response.json();
+
+    // Store both JWT token and CSRF token
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+    }
+    if (data.csrfToken) {
+      localStorage.setItem('csrfToken', data.csrfToken);
+    }
+
     setUser({
-      id: userData.id?.toString() || 'unknown',
-      email: userData.email,
-      firstName: userData.display_name?.split(' ')[0],
-      lastName: userData.display_name?.split(' ')[1]
+      id: data.user?.id?.toString() || 'unknown',
+      email: data.user?.email || email,
+      firstName: data.user?.display_name?.split(' ')[0],
+      lastName: data.user?.display_name?.split(' ')[1]
     });
     router.push('/dashboard');
   };
 
   const register = async (email: string, password: string, firstName?: string, lastName?: string) => {
-    const displayName = [firstName, lastName].filter(Boolean).join(' ') || email.split('@')[0];
-    const response = await fetch('http://localhost:8006/users', {
+    const response = await fetch('http://localhost:8000/api/auth/register', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email, password, display_name: displayName }),
+      credentials: 'include', // Include cookies for CSRF
+      body: JSON.stringify({
+        email,
+        password,
+        first_name: firstName,
+        last_name: lastName
+      }),
     });
 
     if (!response.ok) {
@@ -103,11 +117,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error.error || 'Registration failed');
     }
 
-    const userData = await response.json();
-    localStorage.setItem('token', 'authenticated'); // Simple token since no JWT
+    const data = await response.json();
+
+    // Store both JWT token and CSRF token
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+    }
+    if (data.csrfToken) {
+      localStorage.setItem('csrfToken', data.csrfToken);
+    }
+
     setUser({
-      id: userData.id?.toString() || 'unknown',
-      email: userData.email,
+      id: data.user?.id?.toString() || 'unknown',
+      email: data.user?.email || email,
       firstName: firstName,
       lastName: lastName
     });
@@ -116,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('csrfToken');
     setUser(null);
     router.push('/');
   };

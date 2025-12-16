@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-// import { useAuth } from '@/contexts/AuthContext';
-// import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import CryptoPortfolioCard from '@/components/CryptoPortfolioCard';
 import FavoritesSection from '@/components/FavoritesSection';
@@ -28,8 +28,8 @@ interface FavoriteData {
 }
 
 export default function DashboardPage() {
-  // const { user, isLoading } = useAuth();
-  // const router = useRouter();
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
   const [BtcCandles, setBtcCandles] = useState<any>(null);
   const [portfolioCards, setPortfolioCards] = useState<PortfolioCardData[]>([]);
   const [favoritesData, setFavoritesData] = useState<FavoriteData[]>([]);
@@ -167,19 +167,24 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // Sample crypto data - Top 10 most popular cryptocurrencies (now replaced by real data)
+  // Auth protection - redirect to /auth if not logged in
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/auth');
+    }
+  }, [isLoading, user, router]);
 
-  // if (isLoading) {
-  //   return (
-  //     <div className="min-h-screen flex items-center justify-center bg-gray-900">
-  //       <div className="text-white text-xl">Loading...</div>
-  //     </div>
-  //   );
-  // }
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    );
+  }
 
-  // if (!user) {
-  //   return null;
-  // }
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-900">
