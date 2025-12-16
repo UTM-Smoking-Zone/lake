@@ -80,55 +80,242 @@ docker compose down
 
 ## Features
 
-### Trading
-- Demo wallets ($10,000 virtual balance)
-- Market & limit orders
-- Portfolio management
-- Transaction history
-- Real-time price feed from Binance
+### ✅ Implemented
 
-### Analytics
-- OHLCV data (1m, 5m, 1h, 4h, 1d)
-- Technical indicators (SMA, EMA, RSI, MACD)
-- Real-time calculations
+**Authentication & User Management:**
+- User registration (email + password, bcrypt hashing)
+- Login with JWT tokens (24h expiry)
+- Protected routes with middleware
+- User profile management
 
-### ML
-- Price predictions
-- Strategy backtesting
-- SMA crossover, RSI strategies
+**Trading (Backend Ready, Frontend Partial):**
+- Portfolio creation and management
+- Market, limit, stop, and stop-limit orders
+- Order execution with balance verification
+- Order cancellation with ownership check
+- Transaction history tracking
+- CSRF protection on all trading endpoints
+
+**Market Data:**
+- Real-time Binance WebSocket integration (10 symbols)
+- Live price updates via Socket.IO
+- Historical OHLCV data (1m, 5m, 15m, 1h intervals)
+- Interactive trading charts (Lightweight Charts)
+
+**Analytics:**
+- Technical indicators: SMA (20/50/200), EMA, RSI, MACD
+- Bollinger Bands, Volatility (10d/14d)
+- ML features extraction (12 parameters)
+- Redis caching (60s TTL)
+
+**ML Predictions:**
+- LSTM Keras model (enhanced_ultimate_sell_predictor_v2)
+- SELL/HOLD signals with confidence scores
+- 12-feature input (SMA, BB, MACD, volatility)
+- Model metrics: F1=0.918, AUC=0.969
+- Simple trend prediction (SMA-based fallback)
+- Strategy backtesting (Sharpe ratio, drawdown, win rate)
+
+**Infrastructure:**
+- Circuit breaker pattern (resilience)
+- Rate limiting (100 req/15min)
+- Health checks on all services
+- WebSocket authentication
+- Database transactions with row-level locking
+
+### ⚠️ Partially Implemented
+
+**Frontend UI:**
+- ✅ Dashboard with live prices (Binance API)
+- ✅ Trading interface (UI only)
+- ✅ Portfolio page (hardcoded data)
+- ✅ Analytics page (hardcoded data)
+- ✅ Settings page (UI only)
+- ❌ Buy/Sell buttons not connected to backend
+- ❌ Real portfolio data not fetched from API
+- ❌ Chart interval switching not functional
+- ❌ Settings save functionality missing
+
+### ❌ Not Implemented
+
+- Change password endpoint
+- Two-factor authentication (2FA)
+- Email notifications
+- Push notifications
+- Auto-trading
+- Live order book
+- Advanced charting tools
+- Order history in frontend
+- Watchlist management (backend missing)
 
 ## API Examples
 
-### Portfolio
+### Authentication
+
+#### Register
 ```bash
-curl http://localhost:8000/api/portfolio/user123
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "strongpassword123",
+    "first_name": "John",
+    "last_name": "Doe"
+  }'
 ```
 
-### Create Order
+#### Login
+```bash
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "strongpassword123"
+  }'
+# Returns: {"token": "eyJhbGc...", "user": {...}}
+```
+
+#### Get CSRF Token
+```bash
+curl http://localhost:8000/api/csrf-token \
+  -H "Cookie: _csrf=..." \
+  --cookie-jar cookies.txt
+# Returns: {"csrfToken": "..."}
+```
+
+### Portfolio Management
+
+#### Get User Portfolio
+```bash
+curl http://localhost:8000/api/portfolio/1 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Create Portfolio
+```bash
+curl -X POST http://localhost:8001/portfolio \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1,
+    "name": "Main Portfolio",
+    "currency": "USDT"
+  }'
+```
+
+### Trading
+
+#### Create Order (requires CSRF)
 ```bash
 curl -X POST http://localhost:8000/api/orders \
   -H "Content-Type: application/json" \
-  -d '{"user_id":"user123","symbol":"BTCUSDT","type":"market","side":"buy","amount":0.01}'
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "X-CSRF-Token: YOUR_CSRF_TOKEN" \
+  -H "Cookie: _csrf=..." \
+  -d '{
+    "symbol_id": 1,
+    "portfolio_id": 1,
+    "side": "buy",
+    "type": "limit",
+    "quantity": 0.01,
+    "price": 45000.00
+  }'
 ```
 
-### Get Transactions
+#### Execute Order (requires CSRF + ownership check)
 ```bash
-curl http://localhost:8000/api/transactions/user123
+curl -X POST http://localhost:8000/api/orders/123/execute \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "X-CSRF-Token: YOUR_CSRF_TOKEN" \
+  -H "Cookie: _csrf=..."
 ```
 
-### Technical Indicators
+#### Cancel Order (requires CSRF + ownership check)
 ```bash
-curl "http://localhost:8000/api/analytics/indicators?symbol=BTCUSDT&indicators=sma,rsi"
+curl -X PATCH http://localhost:8000/api/orders/123/cancel \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "X-CSRF-Token: YOUR_CSRF_TOKEN" \
+  -H "Cookie: _csrf=..."
 ```
 
-### ML Prediction
+### Transaction History
+```bash
+curl http://localhost:8000/api/transactions/1?limit=50&offset=0 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Analytics
+
+#### Technical Indicators
+```bash
+curl "http://localhost:8000/api/analytics/indicators/BTCUSDT?interval=1h" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+# Returns: SMA (20/50/200), EMA, RSI, MACD, Bollinger Bands
+```
+
+#### OHLCV Data
+```bash
+curl "http://localhost:8000/api/analytics/ohlcv/BTCUSDT?interval=1m&limit=100"
+```
+
+#### ML Features
+```bash
+curl "http://localhost:8000/api/analytics/ml-features/BTCUSDT?interval=1h"
+# Returns: 12 features for ML model
+```
+
+### ML Predictions
+
+#### Simple Trend Prediction
 ```bash
 curl "http://localhost:8000/api/ml/predict?symbol=BTCUSDT&horizon=60"
 ```
 
-### Market Data (Binance)
+#### Advanced LSTM Prediction
+```bash
+curl -X POST http://localhost:8000/api/ml/predict-advanced \
+  -H "Content-Type: application/json" \
+  -d '{
+    "features": [[high, sma_20, sma_50, sma_200, bb_middle, bb_upper,
+                  volatility_10d, volatility_14d, macd_12_26, macd_5_35,
+                  macd_signal_5_35, below_all_sma], ...]
+  }'
+# Returns: {"prediction": "SELL", "confidence": 0.89, ...}
+```
+
+#### Backtest Strategy
+```bash
+curl -X POST http://localhost:8000/api/ml/backtest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "BTCUSDT",
+    "strategy": "sma_crossover",
+    "params": {"fast": 20, "slow": 50}
+  }'
+# Returns: Sharpe ratio, max drawdown, win rate, total return
+```
+
+#### Model Info
+```bash
+curl http://localhost:8000/api/ml/model-info
+```
+
+### Market Data (NestJS Service)
+
+#### Get Candles
 ```bash
 curl "http://localhost:3001/candles?symbol=BTCUSDT&interval=1m&limit=100"
+```
+
+#### WebSocket (Socket.IO)
+```javascript
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:3001/market');
+
+socket.on('kline', (data) => {
+  console.log('New candle:', data);
+  // { time, open, high, low, close, isFinal, interval, symbol }
+});
 ```
 
 ## Testing

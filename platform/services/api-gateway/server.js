@@ -106,19 +106,25 @@ async function proxyRequest(serviceName, path, method = 'GET', data = null, head
 }
 
 // Authentication routes - public, no JWT required
-app.post('/api/auth/register', validate(schemas.register), async (req, res) => {
+app.post('/api/auth/register', csrfProtection, validate(schemas.register), async (req, res) => {
   try {
     const data = await proxyRequest('user', '/register', 'POST', req.body);
-    res.json(data);
+    res.json({
+      ...data,
+      csrfToken: req.csrfToken()
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/auth/login', validate(schemas.login), async (req, res) => {
+app.post('/api/auth/login', csrfProtection, validate(schemas.login), async (req, res) => {
   try {
     const data = await proxyRequest('user', '/login', 'POST', req.body);
-    res.json(data);
+    res.json({
+      ...data,
+      csrfToken: req.csrfToken()
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -135,6 +141,30 @@ app.get('/api/portfolio/:userId', authMiddleware, validate(schemas.userId, 'para
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user orders
+app.get('/api/orders', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { portfolio_id, status, limit = 50, offset = 0 } = req.query;
+
+    // Build query string
+    const queryParams = new URLSearchParams({
+      status: status || 'all',
+      limit: String(limit),
+      offset: String(offset)
+    });
+
+    if (portfolio_id) {
+      queryParams.append('portfolio_id', String(portfolio_id));
+    }
+
+    const data = await proxyRequest('order', `/orders/user/${userId}?${queryParams.toString()}`, 'GET');
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
 
