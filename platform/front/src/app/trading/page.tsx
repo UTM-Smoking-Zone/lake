@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
-import TradingFormSimple from '@/components/TradingFormSimple';
-
+import TradingFormSimple from '@/components/TradingFormSimple';import PortfolioBalance from '@/components/PortfolioBalance';
 interface CoinData {
   name: string;
   symbol: string;
@@ -147,7 +146,7 @@ export default function TradingPage() {
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-400">Available Balance</p>
-              <p className="text-xl font-bold text-green-400">$12,459.30</p>
+              <PortfolioBalance />
             </div>
           </div>
         </header>

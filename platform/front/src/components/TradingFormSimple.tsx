@@ -42,6 +42,8 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   const [amount, setAmount] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [cryptoPrices, setCryptoPrices] = useState<Record<string, number>>({});
+  const [totalValue, setTotalValue] = useState(0);
 
   // Temporary direct API access for testing (bypass API Gateway auth)
   const PORTFOLIO_API = 'http://localhost:8001';
@@ -52,22 +54,79 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   useEffect(() => {
     fetchPortfolio();
     fetchOrders();
+    fetchCryptoPrices();
+    
+    // Refresh prices every 30 seconds
+    const priceInterval = setInterval(fetchCryptoPrices, 30000);
+    return () => clearInterval(priceInterval);
   }, []);
 
   useEffect(() => {
-    // Auto-calculate quantity when amount changes
-    if (amount && selectedCoinData?.price && side === 'buy') {
-      const currentPrice = parseFloat(selectedCoinData.price.replace('$', '').replace(',', ''));
-      const calculatedQuantity = parseFloat(amount) / currentPrice;
-      setQuantity(calculatedQuantity.toFixed(8));
+    // Recalculate total value when portfolio or prices change
+    if (portfolio && Object.keys(cryptoPrices).length > 0) {
+      calculateTotalValue();
     }
-    // Auto-calculate amount when quantity changes
-    else if (quantity && selectedCoinData?.price) {
-      const currentPrice = parseFloat(selectedCoinData.price.replace('$', '').replace(',', ''));
-      const calculatedAmount = parseFloat(quantity) * currentPrice;
-      setAmount(calculatedAmount.toFixed(2));
+  }, [portfolio, cryptoPrices]);
+
+  useEffect(() => {
+    // Auto-calculate based on buy/sell logic
+    if (side === 'buy') {
+      // BUY: Amount (USDT) -> Quantity (Crypto)
+      if (amount && selectedCoinData?.price) {
+        const currentPrice = parseFloat(selectedCoinData.price.replace('$', '').replace(',', ''));
+        const calculatedQuantity = parseFloat(amount) / currentPrice;
+        setQuantity(calculatedQuantity.toFixed(8));
+      }
+    } else {
+      // SELL: Amount (Crypto) -> Quantity (USDT) 
+      if (amount && selectedCoinData?.price) {
+        const currentPrice = parseFloat(selectedCoinData.price.replace('$', '').replace(',', ''));
+        const calculatedQuantity = parseFloat(amount) * currentPrice;
+        setQuantity(calculatedQuantity.toFixed(2));
+      }
     }
-  }, [amount, quantity, selectedCoinData, side]);
+  }, [amount, selectedCoinData, side]);
+
+  const fetchCryptoPrices = async () => {
+    try {
+      const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT', 'ADAUSDT', 'DOGEUSDT', 'TRXUSDT', 'MATICUSDT', 'AVAXUSDT'];
+      const pricesPromises = symbols.map(async (symbol) => {
+        const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
+        const data = await response.json();
+        return { symbol, price: parseFloat(data.price) };
+      });
+      
+      const pricesData = await Promise.all(pricesPromises);
+      const pricesMap: Record<string, number> = {};
+      
+      pricesData.forEach(({ symbol, price }) => {
+        const coinCode = symbol.replace('USDT', '');
+        pricesMap[coinCode] = price;
+      });
+      
+      // Add stablecoins at $1
+      pricesMap['USDT'] = 1;
+      pricesMap['USDC'] = 1;
+      pricesMap['USD'] = 1;
+      
+      setCryptoPrices(pricesMap);
+    } catch (error) {
+      console.error('Failed to fetch crypto prices:', error);
+    }
+  };
+
+  const calculateTotalValue = () => {
+    if (!portfolio) return;
+    
+    let total = 0;
+    portfolio.balances.forEach(balance => {
+      const price = cryptoPrices[balance.asset_code] || 0;
+      const quantity = parseFloat(balance.qty);
+      total += price * quantity;
+    });
+    
+    setTotalValue(total);
+  };
 
   const fetchPortfolio = async () => {
     try {
@@ -108,17 +167,19 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quantity) return;
+    if (!amount) return;
 
     setIsLoading(true);
     try {
-      // Create order
+      // Create order - pentru sell folosim amount (crypto quantity), pentru buy folosim quantity (crypto quantity)
+      const orderQuantity = side === 'sell' ? parseFloat(amount) : parseFloat(quantity);
+      
       const orderData = {
         portfolio_id: 1, // Hardcoded for testing
         symbol: `${selectedCoin}USDT`,
         type: type,
         side: side,
-        quantity: parseFloat(quantity),
+        quantity: orderQuantity,
         price: type === 'limit' ? parseFloat(price) : undefined,
         exchange_code: 'BINANCE'
       };
@@ -210,24 +271,23 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   };
 
   const setMaxAmount = () => {
-    const maxQty = getMaxQuantity();
-    if (maxQty > 0) {
-      setQuantity(maxQty.toFixed(8));
+    if (side === 'buy') {
+      // For BUY: set max USDT amount
+      const usdtBalance = parseFloat(portfolio?.balances?.find(b => b.asset_code === 'USDT')?.qty || '0');
+      if (usdtBalance > 0) {
+        setAmount(usdtBalance.toFixed(2));
+      }
+    } else {
+      // For SELL: set max crypto amount
+      const coinBalance = parseFloat(portfolio?.balances?.find(b => b.asset_code === selectedCoin)?.qty || '0');
+      if (coinBalance > 0) {
+        setAmount(coinBalance.toFixed(8));
+      }
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Debug Info */}
-      <div className="bg-gray-900 rounded-lg border border-gray-600 p-3">
-        <h4 className="text-xs font-medium text-gray-300 mb-2">Debug Info</h4>
-        <div className="text-xs text-gray-400 space-y-1">
-          <div>Portfolio ID: {portfolio?.id || 'Loading...'}</div>
-          <div>USDT Balance: {portfolio?.balances?.find(b => b.asset_code === 'USDT')?.qty || 'N/A'}</div>
-          <div>BTC Balance: {portfolio?.balances?.find(b => b.asset_code === 'BTC')?.qty || 'N/A'}</div>
-        </div>
-      </div>
-
       {/* Trading Form */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
         <h3 className="text-lg font-semibold text-white mb-4">Trade {selectedCoin}</h3>
@@ -237,7 +297,11 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
           <div className="flex bg-gray-700 rounded-lg p-1">
             <button
               type="button"
-              onClick={() => setSide('buy')}
+              onClick={() => {
+                setSide('buy');
+                setAmount('');
+                setQuantity('');
+              }}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${ 
                 side === 'buy' 
                   ? 'bg-green-600 text-white' 
@@ -248,7 +312,11 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
             </button>
             <button
               type="button"
-              onClick={() => setSide('sell')}
+              onClick={() => {
+                setSide('sell');
+                setAmount('');
+                setQuantity('');
+              }}
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                 side === 'sell' 
                   ? 'bg-red-600 text-white' 
@@ -331,12 +399,12 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
           {/* Submit Button */}
           <button 
             type="submit"
-            disabled={isLoading || !quantity}
+            disabled={isLoading || !amount}
             className={`w-full font-medium py-3 rounded-lg transition-colors ${
               side === 'buy'
                 ? 'bg-green-600 hover:bg-green-500 text-white'
                 : 'bg-red-600 hover:bg-red-500 text-white'
-            } ${(isLoading || !quantity) ? 'opacity-50 cursor-not-allowed' : ''}`}
+            } ${(isLoading || !amount) ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isLoading ? 'Processing...' : `${side.charAt(0).toUpperCase() + side.slice(1)} ${selectedCoin}`}
           </button>
@@ -349,7 +417,12 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
             </div>
             <div className="flex justify-between">
               <span>Est. Fee (0.1%):</span>
-              <span>~{(parseFloat(amount || '0') * 0.001).toFixed(2)} {side === 'buy' ? 'USDT' : selectedCoin}</span>
+              <span>
+                {side === 'buy' 
+                  ? `~${(parseFloat(amount || '0') * 0.001).toFixed(2)} USDT`
+                  : `~${(parseFloat(quantity || '0') * 0.001).toFixed(2)} USDT`
+                }
+              </span>
             </div>
           </div>
         </form>

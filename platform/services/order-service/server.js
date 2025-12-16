@@ -223,12 +223,21 @@ app.post('/orders/:orderId/execute', async (req, res) => {
       );
 
       const availableBalance = balanceResult.rows.length > 0 ? parseFloat(balanceResult.rows[0].qty) : 0;
+      const requiredQuantity = parseFloat(order.quantity);
 
-      if (availableBalance < parseFloat(order.quantity)) {
+      console.log(`🔍 SELL Balance Check for ${order.symbol}:`);
+      console.log(`  - Portfolio ID: ${order.portfolio_id}`);
+      console.log(`  - Base Asset ID: ${order.base_asset_id}`);
+      console.log(`  - Available Balance: ${availableBalance}`);
+      console.log(`  - Required Quantity: ${requiredQuantity}`);
+      console.log(`  - Balance rows found: ${balanceResult.rows.length}`);
+
+      if (availableBalance < requiredQuantity) {
         await client.query('ROLLBACK');
+        console.log(`❌ Insufficient balance: ${availableBalance} < ${requiredQuantity}`);
         return res.status(400).json({
           error: 'Insufficient balance',
-          required: parseFloat(order.quantity),
+          required: requiredQuantity,
           available: availableBalance
         });
       }
