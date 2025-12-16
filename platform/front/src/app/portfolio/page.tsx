@@ -28,7 +28,6 @@ export default function PortfolioPage() {
 
   // API endpoints
   const PORTFOLIO_API = 'http://localhost:8001';
-  const TEST_USER_ID = '1';
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -53,11 +52,13 @@ export default function PortfolioPage() {
   }, [portfolio, cryptoPrices]);
 
   const fetchPortfolioData = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoadingData(true);
-      const response = await fetch(`${PORTFOLIO_API}/portfolio/${TEST_USER_ID}`, {
+      const response = await fetch(`${PORTFOLIO_API}/portfolio/${user.id}`, {
         headers: {
-          'x-user-id': TEST_USER_ID
+          'x-user-id': user.id
         }
       });
       if (response.ok) {

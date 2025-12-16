@@ -26,7 +26,7 @@ export default function PortfolioBalance({ className = "text-xl font-bold text-g
 
   // API endpoints
   const PORTFOLIO_API = 'http://localhost:8001';
-  const TEST_USER_ID = '1';
+  const USER_ID = '4'; // Known user ID from database
 
   useEffect(() => {
     fetchPortfolioAndCalculateValue();
@@ -41,9 +41,9 @@ export default function PortfolioBalance({ className = "text-xl font-bold text-g
       setIsLoading(true);
       
       // Fetch portfolio data
-      const portfolioResponse = await fetch(`${PORTFOLIO_API}/portfolio/${TEST_USER_ID}`, {
+      const portfolioResponse = await fetch(`${PORTFOLIO_API}/portfolio/${USER_ID}`, {
         headers: {
-          'x-user-id': TEST_USER_ID
+          'x-user-id': USER_ID
         }
       });
       

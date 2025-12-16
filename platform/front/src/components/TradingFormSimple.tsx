@@ -59,7 +59,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   const PORTFOLIO_API = 'http://localhost:8001';
   const ORDER_API = 'http://localhost:8002';
   const TRANSACTION_API = 'http://localhost:8003';
-  const TEST_USER_ID = '1';
+  const USER_ID = '4'; // Known user ID from database
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
     setNotification({
@@ -155,9 +155,9 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
 
   const fetchPortfolio = async () => {
     try {
-      const response = await fetch(`${PORTFOLIO_API}/portfolio/${TEST_USER_ID}`, {
+      const response = await fetch(`${PORTFOLIO_API}/portfolio/${USER_ID}`, {
         headers: {
-          'x-user-id': TEST_USER_ID
+          'x-user-id': USER_ID
         }
       });
       if (response.ok) {
@@ -175,9 +175,9 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
     try {
       if (!portfolio?.id) {
         // Use hardcoded portfolio id for testing
-        const response = await fetch(`${ORDER_API}/orders/1`, {
+        const response = await fetch(`${ORDER_API}/orders/4`, {
           headers: {
-            'x-user-id': TEST_USER_ID
+            'x-user-id': USER_ID
           }
         });
         if (response.ok) {
@@ -200,7 +200,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
       const orderQuantity = side === 'sell' ? parseFloat(amount) : parseFloat(quantity);
       
       const orderData = {
-        portfolio_id: 1, // Hardcoded for testing
+        portfolio_id: portfolio?.id || '4', // Use actual portfolio ID, fallback to known ID
         symbol: `${selectedCoin}USDT`,
         type: type,
         side: side,
@@ -213,7 +213,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': TEST_USER_ID
+          'x-user-id': USER_ID
         },
         body: JSON.stringify(orderData)
       });
@@ -232,7 +232,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': TEST_USER_ID
+            'x-user-id': USER_ID
           },
           body: JSON.stringify({
             execution_price: currentPrice

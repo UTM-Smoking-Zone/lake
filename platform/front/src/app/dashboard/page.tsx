@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-// import { useAuth } from '@/contexts/AuthContext';
-// import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import CryptoPortfolioCard from '@/components/CryptoPortfolioCard';
 import FavoritesSection from '@/components/FavoritesSection';
@@ -28,8 +28,8 @@ interface FavoriteData {
 }
 
 export default function DashboardPage() {
-  // const { user, isLoading } = useAuth();
-  // const router = useRouter();
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
   const [BtcCandles, setBtcCandles] = useState<any>(null);
   const [portfolioCards, setPortfolioCards] = useState<PortfolioCardData[]>([]);
   const [favoritesData, setFavoritesData] = useState<FavoriteData[]>([]);
@@ -136,11 +136,11 @@ export default function DashboardPage() {
     }
   };
 
-  // useEffect(() => {
-  //   if (!isLoading && !user) {
-  //     router.push('/auth');
-  //   }
-  // }, [user, isLoading, router]);
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/auth');
+    }
+  }, [user, isLoading, router]);
 
   useEffect(() => {
     // Import component only on client side
