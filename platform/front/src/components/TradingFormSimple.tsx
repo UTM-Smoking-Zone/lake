@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import Notification from './Notification';
 
 interface Portfolio {
@@ -35,6 +36,7 @@ interface TradingFormProps {
 }
 
 export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTradeSuccess }: TradingFormProps) {
+  const { user } = useAuth();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [type, setType] = useState<'market' | 'limit'>('market');
@@ -59,7 +61,6 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   const PORTFOLIO_API = 'http://localhost:8001';
   const ORDER_API = 'http://localhost:8002';
   const TRANSACTION_API = 'http://localhost:8003';
-  const TEST_USER_ID = '1';
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
     setNotification({
@@ -154,10 +155,12 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   };
 
   const fetchPortfolio = async () => {
+    if (!user?.id) return;
+    
     try {
-      const response = await fetch(`${PORTFOLIO_API}/portfolio/${TEST_USER_ID}`, {
+      const response = await fetch(`${PORTFOLIO_API}/portfolio/${user.id}`, {
         headers: {
-          'x-user-id': TEST_USER_ID
+          'x-user-id': user.id
         }
       });
       if (response.ok) {
@@ -172,12 +175,14 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   };
 
   const fetchOrders = async () => {
+    if (!user?.id) return;
+    
     try {
       if (!portfolio?.id) {
         // Use hardcoded portfolio id for testing
-        const response = await fetch(`${ORDER_API}/orders/1`, {
+        const response = await fetch(`${ORDER_API}/orders/3`, {
           headers: {
-            'x-user-id': TEST_USER_ID
+            'x-user-id': user.id
           }
         });
         if (response.ok) {
@@ -192,7 +197,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount) return;
+    if (!amount || !user?.id) return;
 
     setIsLoading(true);
     try {
@@ -200,7 +205,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
       const orderQuantity = side === 'sell' ? parseFloat(amount) : parseFloat(quantity);
       
       const orderData = {
-        portfolio_id: 1, // Hardcoded for testing
+        portfolio_id: portfolio?.id || '4', // Use actual portfolio ID, fallback to known ID
         symbol: `${selectedCoin}USDT`,
         type: type,
         side: side,
@@ -213,7 +218,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': TEST_USER_ID
+          'x-user-id': user.id
         },
         body: JSON.stringify(orderData)
       });
@@ -232,7 +237,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': TEST_USER_ID
+            'x-user-id': user.id
           },
           body: JSON.stringify({
             execution_price: currentPrice

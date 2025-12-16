@@ -136,11 +136,11 @@ export default function DashboardPage() {
     }
   };
 
-  // useEffect(() => {
-  //   if (!isLoading && !user) {
-  //     router.push('/auth');
-  //   }
-  // }, [user, isLoading, router]);
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/auth');
+    }
+  }, [user, isLoading, router]);
 
   useEffect(() => {
     // Import component only on client side

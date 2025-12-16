@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Portfolio {
   id: string;
@@ -21,12 +22,12 @@ interface PortfolioBalanceProps {
 }
 
 export default function PortfolioBalance({ className = "text-xl font-bold text-green-400", textSize }: PortfolioBalanceProps) {
+  const { user } = useAuth();
   const [totalValue, setTotalValue] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   // API endpoints
   const PORTFOLIO_API = 'http://localhost:8001';
-  const TEST_USER_ID = '1';
 
   useEffect(() => {
     fetchPortfolioAndCalculateValue();
@@ -37,13 +38,15 @@ export default function PortfolioBalance({ className = "text-xl font-bold text-g
   }, []);
 
   const fetchPortfolioAndCalculateValue = async () => {
+    if (!user?.id) return;
+    
     try {
       setIsLoading(true);
       
       // Fetch portfolio data
-      const portfolioResponse = await fetch(`${PORTFOLIO_API}/portfolio/${TEST_USER_ID}`, {
+      const portfolioResponse = await fetch(`${PORTFOLIO_API}/portfolio/${user.id}`, {
         headers: {
-          'x-user-id': TEST_USER_ID
+          'x-user-id': user.id
         }
       });
       
