@@ -44,6 +44,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   const [quantity, setQuantity] = useState('');
   const [amount, setAmount] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isPredicting, setIsPredicting] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [cryptoPrices, setCryptoPrices] = useState<Record<string, number>>({});
   const [totalValue, setTotalValue] = useState(0);
@@ -61,6 +62,8 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
   const PORTFOLIO_API = 'http://localhost:8001';
   const ORDER_API = 'http://localhost:8002';
   const TRANSACTION_API = 'http://localhost:8003';
+  const ML_SERVICE_API = 'http://localhost:8005';
+  const ML_PREDICTION_API = 'http://localhost:8007';
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
     setNotification({
@@ -75,6 +78,49 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
       ...prev,
       isVisible: false,
     }));
+  };
+
+  const predictWithML = async () => {
+    if (!selectedCoin || isPredicting) return;
+    
+    // Convert BTC to BTCUSDT for API call
+    const tradingSymbol = selectedCoin === 'BTC' ? 'BTCUSDT' : selectedCoin;
+    
+    setIsPredicting(true);
+    try {
+      // Call ML Service for price prediction
+      const mlResponse = await fetch(`${ML_SERVICE_API}/predict?symbol=${tradingSymbol}&horizon=24&interval=1h`);
+      const mlData = await mlResponse.json();
+
+      if (mlResponse.ok) {
+        const { current_price, predicted_price, prediction_change_pct, confidence } = mlData;
+        
+        let recommendation = '';
+        let actionType: 'success' | 'error' | 'info' = 'info';
+        
+        const changePercent = parseFloat(prediction_change_pct);
+        
+        if (changePercent > 2) {
+          recommendation = `🚀 CUMPĂRĂ! Prețul Bitcoin se prevede să crească cu ${prediction_change_pct}% (de la $${current_price.toFixed(2)} la $${predicted_price.toFixed(2)}). Încredere: ${(confidence * 100).toFixed(1)}%`;
+          actionType = 'success';
+        } else if (changePercent < -2) {
+          recommendation = `📉 NU CUMPĂRA! Prețul Bitcoin se prevede să scadă cu ${Math.abs(changePercent)}% (de la $${current_price.toFixed(2)} la $${predicted_price.toFixed(2)}). Încredere: ${(confidence * 100).toFixed(1)}%`;
+          actionType = 'error';
+        } else {
+          recommendation = `⚖️ NEUTRU! Prețul Bitcoin rămâne relativ stabil (schimbare ${prediction_change_pct}%). Preț actual: $${current_price.toFixed(2)}, previzionat: $${predicted_price.toFixed(2)}. Încredere: ${(confidence * 100).toFixed(1)}%`;
+          actionType = 'info';
+        }
+        
+        showNotification(recommendation, actionType);
+      } else {
+        showNotification('❌ Eroare la predicția prețului. Serviciul ML nu este disponibil.', 'error');
+      }
+    } catch (error) {
+      console.error('ML Prediction error:', error);
+      showNotification('❌ Nu se poate conecta la serviciul ML de predicție.', 'error');
+    } finally {
+      setIsPredicting(false);
+    }
   };
 
   useEffect(() => {
@@ -445,6 +491,32 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
             {isLoading ? 'Processing...' : `${side.charAt(0).toUpperCase() + side.slice(1)} ${selectedCoin}`}
           </button>
 
+          {/* ML Prediction Button */}
+          {(selectedCoin === 'BTCUSDT' || selectedCoin === 'BTC') && (
+            <button 
+              type="button"
+              onClick={predictWithML}
+              disabled={isPredicting}
+              className={`w-full font-medium py-3 rounded-lg transition-colors bg-purple-600 hover:bg-purple-500 text-white mt-3 ${
+                isPredicting ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {isPredicting ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Analizez cu AI...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center">
+                  🤖 Predicție ML pentru Bitcoin
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Balance Info */}
           <div className="text-xs text-gray-400 mt-4 space-y-1">
             <div className="flex justify-between">
@@ -501,6 +573,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
         type={notification.type}
         isVisible={notification.isVisible}
         onClose={hideNotification}
+        autoHide={!isPredicting} // Keep ML predictions visible longer
       />
     </div>
   );
