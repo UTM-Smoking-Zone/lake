@@ -13,64 +13,135 @@ const ML_PREDICTION_SERVICE_URL = process.env.ML_PREDICTION_SERVICE_URL || 'http
 // Configure axios with timeouts
 axios.defaults.timeout = 5000; // 5 seconds default
 
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+  });
+  next();
+});
+
 console.log(`✅ ML Service starting (stateless - uses Analytics Service API)`);
 console.log(`📊 Analytics Service URL: ${ANALYTICS_SERVICE_URL}`);
 console.log(`🤖 ML Prediction Service URL: ${ML_PREDICTION_SERVICE_URL}`);
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', service: 'ml-service' });
+app.get('/health', async (req, res) => {
+  try {
+    // Check analytics service
+    const analyticsHealth = await axios.get(`${ANALYTICS_SERVICE_URL}/health`, {
+      timeout: 2000
+    }).catch(() => ({ data: { status: 'unavailable' } }));
+
+    // Check ML prediction service
+    const mlHealth = await axios.get(`${ML_PREDICTION_SERVICE_URL}/health`, {
+      timeout: 2000
+    }).catch(() => ({ data: { status: 'unavailable' } }));
+
+    const status = (analyticsHealth.data.status === 'healthy' && mlHealth.data.status === 'healthy') 
+      ? 'healthy' 
+      : 'degraded';
+
+    res.status(status === 'healthy' ? 200 : 503).json({
+      status,
+      service: 'ml-service',
+      dependencies: {
+        analytics_service: analyticsHealth.data.status,
+        ml_prediction_service: mlHealth.data.status
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      service: 'ml-service',
+      error: error.message
+    });
+  }
 });
 
 app.get('/predict', async (req, res) => {
   try {
     const { symbol = 'BTCUSDT', horizon = 24, interval = '1h' } = req.query;
 
-    // Get OHLCV data from analytics-service
-    const response = await axios.get(`${ANALYTICS_SERVICE_URL}/ohlcv/${symbol}`, {
-      params: { interval, limit: 100 }
+    // Validate inputs
+    if (!symbol || !/^[A-Z0-9]{2,20}$/.test(symbol)) {
+      return res.status(400).json({ error: 'Invalid symbol format' });
+    }
+
+    // Get ML features from analytics service
+    const featuresResponse = await axios.get(`${ANALYTICS_SERVICE_URL}/ml-features/${symbol}`, {
+      params: { interval, limit: 15 },
+      timeout: 5000
     });
 
-    if (!response.data || !response.data.data || response.data.data.length === 0) {
-      return res.status(404).json({ error: 'No price data available for prediction' });
+    if (!featuresResponse.data || !featuresResponse.data.features) {
+      return res.status(400).json({ error: 'Failed to retrieve ML features' });
     }
 
-    const candles = response.data.data;
-    const prices = candles.map(c => parseFloat(c.close));
-    const currentPrice = prices[prices.length - 1];
+    const features = featuresResponse.data.features;
+    const currentPrice = featuresResponse.data.current_price;
 
-    // Simple moving average prediction (placeholder for real ML model)
-    const recentPrices = prices.slice(-20);
-    const avgPrice = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
-    const trend = (currentPrice - avgPrice) / avgPrice;
+    // Validate all required features are present
+    const requiredFeatures = [
+      'high', 'sma_20', 'sma_50', 'sma_200', 'bb_middle', 'bb_upper',
+      'volatility_10d', 'volatility_14d', 'macd_12_26', 'macd_5_35',
+      'macd_signal_5_35', 'below_all_sma'
+    ];
 
-    // Calculate volatility
-    const returns = [];
-    for (let i = 1; i < recentPrices.length; i++) {
-      returns.push((recentPrices[i] - recentPrices[i - 1]) / recentPrices[i - 1]);
+    const missingFeatures = requiredFeatures.filter(f => !(f in features));
+    if (missingFeatures.length > 0) {
+      return res.status(400).json({
+        error: 'Incomplete feature data',
+        missing_features: missingFeatures
+      });
     }
-    const volatility = Math.sqrt(returns.reduce((sum, r) => sum + r * r, 0) / returns.length);
 
-    const prediction = currentPrice * (1 + trend * 0.5);
-    const confidence = Math.max(0.5, Math.min(0.95, 0.75 - Math.abs(trend) * 2 - volatility * 10));
+    // Call actual ML prediction service
+    let prediction;
+    try {
+      const mlResponse = await axios.post(`${ML_PREDICTION_SERVICE_URL}/predict`, {
+        features: [features], // Wrap single feature set in array for 15-day sequence
+        symbol: symbol
+      }, {
+        timeout: 5000
+      });
+
+      prediction = mlResponse.data;
+    } catch (mlError) {
+      console.error('ML Prediction Service error:', mlError.message);
+      return res.status(503).json({
+        error: 'ML Prediction Service unavailable',
+        detail: mlError.message
+      });
+    }
 
     res.json({
       symbol,
       interval,
       horizon: parseInt(horizon),
       current_price: currentPrice,
-      predicted_price: prediction,
-      prediction_change_pct: ((prediction - currentPrice) / currentPrice * 100).toFixed(2),
-      confidence: confidence,
-      model: 'simple_ma_trend',
-      timestamp: new Date().toISOString(),
-      data_points: prices.length
+      ml_signal: prediction.prediction,
+      probability: prediction.probability,
+      confidence: prediction.confidence,
+      signal_strength: prediction.signal_strength,
+      model_version: prediction.model_version,
+      threshold: prediction.threshold,
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Prediction error:', error);
+    console.error('Prediction error:', error.message);
     if (error.response) {
-      return res.status(error.response.status).json({ error: error.response.data });
+      return res.status(error.response.status || 500).json({
+        error: 'Downstream service error',
+        detail: error.response.data
+      });
     }
-    res.status(500).json({ error: error.message });
+    res.status(500).json({
+      error: 'Prediction failed',
+      detail: error.message
+    });
   }
 });
 
@@ -206,7 +277,11 @@ app.post('/backtest', async (req, res) => {
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`ML Service running on port ${PORT}`);
+    console.log(`\n✅ ML Service running on port ${PORT}`);
+    console.log(`📊 Endpoints:`);
+    console.log(`   GET  /health - Service health status`);
+    console.log(`   GET  /predict?symbol=BTCUSDT&interval=1h - Get ML prediction`);
+    console.log(`   POST /backtest - Backtest trading strategy\n`);
   });
 }
 

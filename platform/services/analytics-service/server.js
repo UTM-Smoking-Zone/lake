@@ -274,6 +274,13 @@ app.get('/ohlcv/:symbol', validateSymbol, validateQueryParams, cacheMiddleware, 
     };
 
     const table = tableMap[interval] || 'ohlcv_1h';
+    
+    // Validate table name is whitelisted to prevent SQL injection
+    if (!Object.values(tableMap).includes(table)) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+
+    const limitNum = Math.min(Math.max(parseInt(limit) || 100, 1), 1000);
 
     const result = await pool.query(`
       SELECT
@@ -290,7 +297,11 @@ app.get('/ohlcv/:symbol', validateSymbol, validateQueryParams, cacheMiddleware, 
       WHERE symbol = $1
       ORDER BY open_time DESC
       LIMIT $2
-    `, [symbol, parseInt(limit)]);
+    `, [symbol, limitNum]);
+    
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ error: 'No data found for this symbol and interval', symbol, interval });
+    }
 
     res.json({
       symbol,
@@ -316,6 +327,16 @@ app.get('/indicators/:symbol', validateSymbol, validateQueryParams, cacheMiddlew
     };
 
     const table = tableMap[interval] || 'v_ohlcv_1h';
+    
+    // Validate table name is whitelisted to prevent SQL injection
+    if (!Object.values(tableMap).includes(table)) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+    
+    // Validate and constrain technical indicator parameters
+    const smaPeriod = Math.min(Math.max(parseInt(sma_period) || 20, 2), 200);
+    const emaPeriod = Math.min(Math.max(parseInt(ema_period) || 12, 2), 200);
+    const rsiPeriod = Math.min(Math.max(parseInt(rsi_period) || 14, 2), 100);
 
     const result = await pool.query(`
       SELECT close
@@ -326,13 +347,13 @@ app.get('/indicators/:symbol', validateSymbol, validateQueryParams, cacheMiddlew
     `, [symbol]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'No OHLCV data found for this symbol' });
+      return res.status(404).json({ error: 'No price data available', symbol, interval });
     }
 
     const prices = result.rows.map(row => parseFloat(row.close));
-    const sma = calculateSMA(prices, parseInt(sma_period));
-    const ema = calculateEMA(prices, parseInt(ema_period));
-    const rsi = calculateRSI(prices, parseInt(rsi_period));
+    const sma = calculateSMA(prices, smaPeriod);
+    const ema = calculateEMA(prices, emaPeriod);
+    const rsi = calculateRSI(prices, rsiPeriod);
     const macd = calculateMACD(prices);
 
     res.json({
@@ -367,6 +388,13 @@ app.get('/ml-features/:symbol', validateSymbol, validateQueryParams, cacheMiddle
     };
 
     const table = tableMap[interval] || 'v_ohlcv_1h';
+    
+    // Validate table name is whitelisted to prevent SQL injection
+    if (!Object.values(tableMap).includes(table)) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+    
+    const limitNum = Math.min(Math.max(parseInt(limit) || 200, 1), 1000);
 
     const result = await pool.query(`
       SELECT open_time, high, close
@@ -374,7 +402,7 @@ app.get('/ml-features/:symbol', validateSymbol, validateQueryParams, cacheMiddle
       WHERE symbol = $1
       ORDER BY open_time ASC
       LIMIT $2
-    `, [symbol, parseInt(limit)]);
+    `, [symbol, limitNum]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'No OHLCV data found for this symbol' });
