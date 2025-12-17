@@ -7,18 +7,19 @@ interface NotificationProps {
   type: 'success' | 'error' | 'info';
   isVisible: boolean;
   onClose: () => void;
+  autoHide?: boolean;
 }
 
-export default function Notification({ message, type, isVisible, onClose }: NotificationProps) {
+export default function Notification({ message, type, isVisible, onClose, autoHide = true }: NotificationProps) {
   useEffect(() => {
-    if (isVisible) {
+    if (isVisible && autoHide) {
       const timer = setTimeout(() => {
         onClose();
-      }, 5000); // Auto close after 5 seconds
+      }, 8000); // Auto close after 8 seconds for ML predictions
 
       return () => clearTimeout(timer);
     }
-  }, [isVisible, onClose]);
+  }, [isVisible, onClose, autoHide]);
 
   if (!isVisible) return null;
 
@@ -67,7 +68,7 @@ export default function Notification({ message, type, isVisible, onClose }: Noti
           <div className="flex items-start">
             {getIcon()}
             <div className="flex-1">
-              <div className="text-sm font-medium whitespace-pre-line">
+              <div className="text-sm font-medium whitespace-pre-line break-words">
                 {message}
               </div>
             </div>
