@@ -152,19 +152,19 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
           
           if (prediction === 'SELL') {
             action = 'VINDE SAU IEȘI';
-            recommendation = `🤖 ML RECOMANDAT: ${action}!
-🎯 Predicție AI: ${prediction}
-📊 Probabilitate: ${(probability * 100).toFixed(1)}%
-⏰ Update următor: ${updateTime}
-💡 Motivul: Algoritmul neural detectează risc de scădere`;
+            recommendation = `ML RECOMANDAT: ${action}!
+Predicție AI: ${prediction}
+Probabilitate: ${(probability * 100).toFixed(1)}%
+Update următor: ${updateTime}
+Motivul: Algoritmul neural detectează risc de scădere`;
             actionType = 'error';
           } else {
             action = 'ȚINE SAU CUMPĂRĂ';
-            recommendation = `🤖 ML RECOMANDAT: ${action}!
-🎯 Predicție AI: ${prediction} 
-📊 Probabilitate: ${(probability * 100).toFixed(1)}%
-⏰ Update următor: ${updateTime}
-💡 Motivul: Algoritmul neural nu detectează risc major`;
+            recommendation = `ML RECOMANDAT: ${action}!
+Predicție AI: ${prediction}
+Probabilitate: ${(probability * 100).toFixed(1)}%
+Update următor: ${updateTime}
+Motivul: Algoritmul neural nu detectează risc major`;
             actionType = 'success';
           }
           
@@ -177,7 +177,7 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
           throw new Error('ML service unavailable');
         }
       } else {
-        showNotification('❌ Nu sunt disponibile date suficiente pentru analiză ML.', 'error');
+        showNotification('Nu sunt disponibile date suficiente pentru analiză ML.', 'error');
       }
     } catch (error) {
       console.error('ML Prediction error:', error);
@@ -207,12 +207,12 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
             actionType = 'info';
           }
           
-          showNotification(`⚠️ ML Service indisponibil. ${action}: ${changePercent.toFixed(2)}%`, actionType);
+          showNotification(`ML Service indisponibil. ${action}: ${changePercent.toFixed(2)}%`, actionType);
         } else {
-          showNotification('❌ Nu se poate conecta la serviciile de analiză.', 'error');
+          showNotification('Nu se poate conecta la serviciile de analiză.', 'error');
         }
       } catch (fallbackError) {
-        showNotification('❌ Nu se poate conecta la serviciile de analiză.', 'error');
+        showNotification('Nu se poate conecta la serviciile de analiză.', 'error');
       }
     } finally {
       setIsPredicting(false);
@@ -606,8 +606,8 @@ export default function TradingFormSimple({ selectedCoin, selectedCoinData, onTr
                   Analizez cu AI...
                 </span>
               ) : (
-                <span className="flex items-center justify-center">
-                  🤖 Predicție ML pentru Bitcoin
+                <span className="flex items-center justify-center font-bold">
+                  Predicție ML pentru Bitcoin
                 </span>
               )}
             </button>

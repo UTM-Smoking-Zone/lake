@@ -68,7 +68,7 @@ export default function Notification({ message, type, isVisible, onClose, autoHi
           <div className="flex items-start">
             {getIcon()}
             <div className="flex-1">
-              <div className="text-sm font-medium whitespace-pre-line break-words">
+              <div className="text-sm font-bold whitespace-pre-line break-words">
                 {message}
               </div>
             </div>
